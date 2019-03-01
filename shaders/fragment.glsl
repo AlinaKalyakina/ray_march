@@ -1,0 +1,461 @@
+#version 330
+
+#define float2 vec2
+#define float3 vec3
+#define float4 vec4
+#define float4x4 mat4
+#define float3x3 mat3
+#define eps 1e-3
+#define samples 6
+#define max_depth 3
+#define step 5e-2
+#define max_dist 15
+#define max_it 1000
+#define penumbra_factor 12.0
+
+uniform float ambient = 0.2;
+
+uniform sampler2D Texture;
+
+in float2 fragmentTexCoord;
+
+layout(location = 0) out vec4 fragColor;
+
+
+uniform bool show_soft_shadows = false;
+uniform bool show_fog = false;
+
+uniform int g_screenWidth = 512;
+uniform int g_screenHeight = 512;
+
+uniform float3 g_bBoxMin   = float3(-1,-1,-1);
+uniform float3 g_bBoxMax   = float3(+1,+1,+1);
+
+uniform float4x4 g_rayMatrix;
+
+uniform float4 g_bgColor = float4(0,0,0.3,1);
+
+struct Material {
+        float ambient;
+        float diffuse;
+        float spec;
+        float reflection;
+        float refraction;
+        float eta;
+        };
+
+struct Object {
+        int material_id;
+        float4 color;
+        };
+
+uniform Material materials[] = Material[] (
+                                Material(1, 1, 1024, 0, 0, 1),
+                                Material(1, 1, 128, 0, 0.5, 1.06),
+                                Material(1, 1, 128, 0, 0, 1),
+                                Material(1, 1, 2048,0, 0, 1.0));
+
+uniform Object objects[] = Object[](
+//                    Object(1, float3(0, 0, 0), float3(0.6, 0.3, 0),
+//                                Material(float4(1, 0.5, 0.5, 1), 1, 1,100, 0, 0, 1)),
+//                    Object(2, float3(0, 0.3, 0), float3(0.5, 0.1, 0),
+//                                Material(float4(0, 1, 0, 1), 1, 1,100, 0, 0, 1)),
+                                Object(0, float4(1, 0, 0, 1)),
+                                Object(1, float4(0, 1, 0, 1)),
+                                Object(2, float4(0, 0, 1, 1)),
+                                Object(3, float4(1, 1, 1, 1)));
+
+struct Point_light {
+        float intensity;
+        float3 pos;
+        float kc;
+        float kl;
+        float kq;
+    };
+
+uniform Point_light lights[] = Point_light[](
+                            Point_light(0.4, float3(0, 5, 0), 0.1, 0.01, 0.00001),
+                            Point_light(0.4, float3(0, 4, 0), 0.1, 0.01, 0.00001));//,
+                            //point_light(0.2, float3(0, -2, 2)),
+                            //point_light(0.2, float3(0, 2, 0)));
+
+struct Intersect {
+        int id;
+        float3 pos;
+        float3 n;//outer nornal
+};
+
+struct Ray {
+        float3 pos;
+        float3 dir;
+        };
+
+struct Stack_frame {
+        int phase; // 0 - nothing done 1 - reflect was computed 2 - refract was computed
+        Ray ray;
+        float4 color;
+        Intersect hit;
+        Object obj;
+        float prev_eta;
+        int depth;
+};
+
+int esp = 1;
+
+Stack_frame stack[5];
+
+float3 EyeRayDir(float x, float y, float w, float h)
+{
+	float fov = 3.141592654f/(2.0f); 
+    float3 ray_dir;
+  
+	ray_dir.x = x+0.5f - (w/2.0f);
+	ray_dir.y = y+0.5f - (h/2.0f);
+	ray_dir.z = -(w)/tan(fov/2.0f);
+	
+  return normalize(ray_dir);
+}
+
+bool RayBoxIntersection(float3 ray_pos, float3 ray_dir, float3 boxMin, float3 boxMax, inout float tmin, inout float tmax)
+{
+  ray_dir.x = 1.0f/ray_dir.x;
+  ray_dir.y = 1.0f/ray_dir.y;
+  ray_dir.z = 1.0f/ray_dir.z;
+
+  float lo = ray_dir.x*(boxMin.x - ray_pos.x);
+  float hi = ray_dir.x*(boxMax.x - ray_pos.x);
+  
+  tmin = min(lo, hi);
+  tmax = max(lo, hi);
+
+  float lo1 = ray_dir.y*(boxMin.y - ray_pos.y);
+  float hi1 = ray_dir.y*(boxMax.y - ray_pos.y);
+
+  tmin = max(tmin, min(lo1, hi1));
+  tmax = min(tmax, max(lo1, hi1));
+
+  float lo2 = ray_dir.z*(boxMin.z - ray_pos.z);
+  float hi2 = ray_dir.z*(boxMax.z - ray_pos.z);
+
+  tmin = max(tmin, min(lo2, hi2));
+  tmax = min(tmax, max(lo2, hi2));
+  
+  return (tmin <= tmax) && (tmax > 0.f);
+}
+
+
+float3 RayMarchConstantFog(float tmin, float tmax, inout float alpha)
+{
+  float dt = 0.05f;
+	float t  = tmin;
+	
+	alpha  = 1.0f;
+	float3 color = float3(0,0,0);
+	
+	while(t < tmax && alpha > 0.01f)
+	{
+	  float a = 0.05f;
+	  color += a*alpha*float3(1.0f,1.0f,0.0f);
+	  alpha *= (1.0f-a);
+	  t += dt;
+	}
+	
+	return color;
+}
+
+float sdSphere(vec3 p, float s)
+{
+  return length(p)-s;
+}
+
+float sdTorus(vec3 p, vec2 t)
+{
+  vec2 q = vec2(length(p.xz)-t.x,p.y);
+  return length(q)-t.y;
+}
+
+float sdCappedCylinder( vec3 p, vec2 h )
+{
+  vec2 d = abs(vec2(length(p.xz),p.y)) - h;
+  return min(max(d.x,d.y),0.0) + length(max(d,0.0));
+}
+
+float sdBox( vec3 p, vec3 b )
+{
+  vec3 d = abs(p) - b;
+  return min(max(d.x,max(d.y,d.z)),0.0) + length(max(d,0.0));
+}
+
+float opRep( vec3 p, vec3 c )
+{
+    vec3 q = mod(p,c)-0.5*c;
+    return sdSphere(q, 0.25);
+}
+
+float DistanceEvaluation(vec3 p, int id){
+    //Object obj = objects[id];
+    switch(id){
+        case 0:
+            //return opRep(p, float3(1, 1, 2));
+            return max(sdSphere(float3(0, 0.7, 0.0) - p, 0.3), -sdBox(p - float3(0, 0.75, 0.0), float3(0.1, 0.1, 1)));
+            return sdSphere(float3(0, 0.75, 0.0) - p, 0.25);
+        case 1: //cylinder
+            return sdSphere(float3(-0.5, 1, 0.75) - p, 0.5);
+            //return sdCappedCylinder(obj.centre - p, obj.info.xy);
+        case 2: //torus
+            return sdSphere(float3(0.5, 1,  0.75) - p, 0.25);
+            //return sdTorus(obj.centre-p, obj.info.xy);
+        case 3: //box
+            return sdBox(p - float3(0, -0.5, 0), float3(100, 0.1, 100));
+        //case 5:
+    }
+}
+
+float3 EstimateNormal(float3 z, int id)
+{
+    float3 z1 = z + float3(eps, 0, 0);
+    float3 z2 = z - float3(eps, 0, 0);
+    float3 z3 = z + float3(0, eps, 0);
+    float3 z4 = z - float3(0, eps, 0);
+    float3 z5 = z + float3(0, 0, eps);
+    float3 z6 = z - float3(0, 0, eps);
+    float dx = DistanceEvaluation(z1, id) - DistanceEvaluation(z2, id);
+    float dy = DistanceEvaluation(z3, id) - DistanceEvaluation(z4, id);
+    float dz = DistanceEvaluation(z5, id) - DistanceEvaluation(z6, id);
+    return normalize(float3(dx, dy, dz));
+}
+
+float MinDist(float3 pos, out int object_id) {
+    float cur_dist, min_dist = 100000.0;
+    for(int i = 0; i < 4; i++) {
+        cur_dist = abs(DistanceEvaluation(pos, i));
+        if (cur_dist < min_dist) {
+            min_dist = cur_dist;
+            object_id = i;
+        }
+    }
+    return min_dist;
+}
+
+float Shadow(float3 point_pos, float3 ray_dir, float mint, float maxt)
+{
+    float ph = 1e20;
+    float res = 1.0;
+    int id;
+    float loc_eps = eps*0.1;
+    float transp = 1;
+    for (float t = mint; t < maxt; )
+    {
+        float h = MinDist(point_pos + t*ray_dir, id);
+        if(h < loc_eps) {
+//            if (materials[objects[id].material_id].refraction > 0) {
+//                t += eps;
+//                transp *= materials[objects[id].material_id].refraction;
+//                }
+//            else
+                return 0.0f;
+        }
+        if (show_soft_shadows) {
+            float y = h*h/(2.0*ph);
+            float d = sqrt(h*h-y*y);
+            res = min(res, penumbra_factor*h/max(0.0,t-y)/transp/transp);
+            ph = h;
+            }
+        t += h;
+    }
+    return res*transp;
+}
+
+Intersect ray_intersection(Ray ray, float k) {
+    float cur_dist, min_dist = 100000;
+    int object_id = -1;
+    int i = 0;
+    while (min_dist > eps && max_it > i) {
+        min_dist = 100000;
+        if (length(ray.pos) > max_dist) {
+            ray.pos = normalize(ray.pos) * 15;
+            object_id = -1;
+            break;
+        }
+        min_dist = MinDist(ray.pos, object_id);
+        ray.pos += min_dist * ray.dir;
+        i++;
+    }
+    if (min_dist > eps) {
+        object_id = -1;
+    }
+    float3 n = EstimateNormal(ray.pos, object_id);
+    if (dot(n, ray.dir) > 0) {
+        n = -n;
+    }
+    Intersect res = Intersect(object_id, ray.pos, n);
+    return res;
+}
+
+float get_occlusion(Intersect hit) {
+    float occlusion = 1.0f;
+    float dist;
+    int id;
+    float3 step_vector = step*hit.n;
+    float3 cur_pos = hit.pos + step*hit.n;
+    for (int i = 1; i <= samples; i++) {
+        dist = MinDist(cur_pos, id);
+        occlusion -= pow(2, samples - i)*(i * step - dist) / i*step;
+        cur_pos += step_vector;
+    }
+
+    return max(occlusion, 0);
+}
+
+float get_shade(Intersect hit, float3 ray_dir) {
+    Object obj = objects[hit.id];
+    Material material = materials[obj.material_id];
+    //ambient
+    float intensity = ambient * material.ambient * get_occlusion(hit);
+    float shadow;
+    Intersect result;
+    for (int i = 0; i < 2; i++) {
+        float3 l = normalize(lights[i].pos - hit.pos);
+        //shadow
+        shadow = Shadow(hit.pos, l, 2*eps, length(lights[i].pos - hit.pos));
+        if (shadow == 0.0) {
+            continue;
+        }
+        float d = length(hit.pos - lights[i].pos);
+        float att = lights[i].kc + lights[i].kl*d + lights[i].kq*d*d;
+        //diffuse
+        float n_dot_l = dot(hit.n, l);
+        if (n_dot_l > 0) {
+            intensity += lights[i].intensity*n_dot_l* material.diffuse*shadow/att;
+        }
+        //specular
+        if (material.spec != 0) {
+            float3 r = 2*n_dot_l*hit.n - l;
+            float r_dot_v = dot(r, -ray_dir);
+            if (r_dot_v > 0) {
+                intensity += lights[i].intensity*pow(r_dot_v, material.spec)*shadow/att;
+            }
+        }
+
+    }
+    return intensity;
+}
+
+vec4 fog(float distance, vec4 color ) {
+    return mix(color,vec4(0.5,0.5,0.6, 1), smoothstep(0.0,1.0,distance/5.0) );
+}
+
+vec4 ray_march(inout Stack_frame frame, float4 prev_ret) {
+    if (frame.phase == 0) {
+        frame.color = float4(0, 0,0,0);
+        frame.hit = ray_intersection(frame.ray, 1);
+        if (frame.hit.id == -1) {
+            frame.color = g_bgColor;
+            esp--;
+            if (show_fog)
+                return fog(length(frame.hit.pos - frame.ray.pos), g_bgColor);
+            return frame.color;
+        }
+        frame.obj = objects[frame.hit.id];
+        frame.color += frame.obj.color*get_shade(frame.hit, frame.ray.dir) * (1 - materials[frame.obj.material_id].reflection
+                                                                    - materials[frame.obj.material_id].refraction);
+        if (frame.depth >= max_depth) {
+            esp--;
+            return frame.color;
+        }
+        if (materials[frame.obj.material_id].reflection > 0) {
+            float3 refl = reflect(frame.ray.dir, frame.hit.n);
+            Ray refl_ray = Ray(frame.hit.pos + 2*eps*refl, refl);
+            stack[esp] = Stack_frame(0, refl_ray, float4(0, 0, 0, 0), frame.hit, frame.obj, frame.prev_eta, frame.depth + 1);
+            esp++;
+            frame.phase = 1;
+            return frame.color;
+        } else {
+            frame.phase = 1;
+        }
+    }
+    if (frame.phase == 1) {
+        frame.color += materials[frame.obj.material_id].reflection * prev_ret;
+        if (materials[frame.obj.material_id].refraction > 0) {
+            float3 refr = refract(frame.ray.dir, frame.hit.n, materials[frame.obj.material_id].eta/frame.prev_eta);
+            if (refr == float3(0, 0, 0)) {
+                esp--;
+                return frame.color;
+            }
+            Ray refr_ray = Ray(frame.hit.pos + 5 * eps*(refr + frame.ray.dir), refr);
+            float eta;
+            if (DistanceEvaluation(refr_ray.pos, frame.hit.id) > 0) {
+                eta = 1;
+            } else {
+                eta = materials[frame.obj.material_id].eta;
+            }
+            stack[esp] = Stack_frame(0, refr_ray, float4(0, 0, 0, 0), frame.hit, frame.obj, eta, frame.depth + 1);
+            esp++;
+            frame.phase = 2;
+            return frame.color;
+        } else {
+            frame.phase = 2;
+        }
+    }
+    if (frame.phase == 2) {
+        frame.color += materials[frame.obj.material_id].refraction*prev_ret;
+        frame.phase = 3;
+    }
+    esp--;
+    if (show_fog)
+        return fog(length(frame.hit.pos - frame.ray.pos), frame.color);
+    return frame.color;
+}
+
+
+void main(void)
+{
+    //fragColor = texture(Texture, fragmentTexCoord);
+    //return;
+    float w = float(g_screenWidth);
+    float h = float(g_screenHeight);
+
+  // get curr pixelcoordinates
+  //
+    float x = fragmentTexCoord.x*w;
+    float y = fragmentTexCoord.y*h;
+
+  // generate initial ray
+  //
+    float3 ray_pos = float3(0,0,0);
+    float3 ray_dir = EyeRayDir(x,y,w,h);
+
+  // transorm ray with matrix
+  //
+    ray_pos = (g_rayMatrix*float4(ray_pos,1)).xyz;
+    ray_dir = normalize(float3x3(g_rayMatrix)*ray_dir);
+
+  // intersect bounding box of the whole scene, if no intersection found return background color
+    Stack_frame zero_frame;
+    zero_frame.phase = 0;
+    zero_frame.ray = Ray(ray_pos, ray_dir);
+    zero_frame.depth = 0;
+    zero_frame.prev_eta = 1;
+    stack[0] = zero_frame;
+    fragColor = float4(0, 0, 0, 0);
+    while (esp != 0) {
+        fragColor = ray_march(stack[esp - 1], fragColor);
+    }
+//    fragColor = res_color;
+//    return;
+//    float tmin = 1e38f;
+//    float tmax = 0;
+//
+//  if(!RayBoxIntersection(ray_pos, ray_dir, g_bBoxMin, g_bBoxMax, tmin, tmax))
+//  {
+//    fragColor = g_bgColor;
+//    return;
+//  }
+//
+//	float alpha = 1.0f;
+//	float3 color = RayMarchConstantFog(tmin, tmax, alpha);
+//	fragColor = float4(color,0)*(1.0f-alpha) + g_bgColor*alpha;
+//}
+}
+
+
