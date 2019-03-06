@@ -7,7 +7,10 @@
 #define GLFW_DLL
 #include <GLFW/glfw3.h>
 #include <random>
-#include "SOIL/SOIL.h"
+#include <ctime>
+
+#define STB_IMAGE_IMPLEMENTATION
+#include "stb_image.h"
 
 static GLsizei WIDTH = 512, HEIGHT = 512; //размеры окна
 
@@ -19,21 +22,26 @@ float  cam_rot[2] = {0,0};
 int    mx = 0, my = 0;
 float speed = 0.1;
 const float max_speed = 4;
-const float init_speed = 0.1;
-const float acceleration = 1.5;
+//const float init_speed = 0.1;
+//const float acceleration = 1.5;
 bool soft_shadows = false;
 bool fog = false;
-//float cam_fov = 45;//
+std::string tex_path = "../mp_awup/";
+//std::string textures[] = {"rt.tga", "bk.tga",
+//                          "up.tga", "dn.tga",
+//                          "lf.tga","ft.tga"};
+
+std::string textures[] = {"ft.tga", "bk.tga",
+                          "up.tga", "dn.tga",
+                          "rt.tga", "lf.tga"};
 
 
-void windowResize(GLFWwindow* window, int width, int height)
-{
+void windowResize(GLFWwindow* window, int width, int height) {
   WIDTH  = width;
   HEIGHT = height;
 }
 
-static void mouseMove(GLFWwindow* window, double xpos, double ypos)
-{
+static void mouseMove(GLFWwindow* window, double xpos, double ypos) {
   xpos *= 0.05f;
   ypos *= 0.05f;
 
@@ -50,8 +58,7 @@ static void mouseMove(GLFWwindow* window, double xpos, double ypos)
   my = int(ypos);
 }
 
-static void mouseScroll(GLFWwindow* window, double xpos, double ypos)
-{
+static void mouseScroll(GLFWwindow* window, double xpos, double ypos) {
     g_camPos += ypos*view_dir*0.1;
 //    if(cam_fov <= 1.0f)
 //        cam_fov = 1.0f;
@@ -113,13 +120,15 @@ static void keyCallback(GLFWwindow* window, int key, int scancode, int action, i
             printf("%lf ", speed);
             break;
     }
+    if (g_camPos.y < 0) {
+        g_camPos.y = 0;
+    }
     view_dir.x = cos(cam_rot[0])*sin(cam_rot[1]);
     view_dir.y = sin(cam_rot[0]);
     view_dir.z = -cos(cam_rot[0])*cos(cam_rot[1]);
 }
 
-int initGL()//
-{
+int initGL() {
 	int res = 0;
 	//грузим функции opengl через glad
 	if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress))
@@ -196,14 +205,23 @@ int main(int argc, char** argv)
       1.0f,  1.0f,	// v2 - top right corner
       1.0f, -1.0f	  // v3 - bottom right corner
     };
-    int width, height;
-    unsigned char* image = SOIL_load_image("../index.jpeg", &width, &height, 0, SOIL_LOAD_RGB);
-    GLuint texture;
-    glGenTextures(1, &texture); GL_CHECK_ERRORS;
-    glBindTexture(GL_TEXTURE_2D, texture); GL_CHECK_ERRORS;
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, image); GL_CHECK_ERRORS;
-    glGenerateMipmap(GL_TEXTURE_2D);
-    SOIL_free_image_data(image);
+    unsigned int texture;
+    glGenTextures(1, &texture);
+    glBindTexture(GL_TEXTURE_CUBE_MAP, texture);
+    int width, height, nrChannels;
+    unsigned char* image;
+    for (GLuint i = 0; i < 6; i++) {
+        image = stbi_load((tex_path + textures[i]).c_str(), &width, &height, &nrChannels, 0);
+        glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i,
+                     0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, image);
+        stbi_image_free(image);
+    }
+    //glGenerateTextureMipmap(texture);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
 
     g_vertexBufferObject = 0;
     GLuint vertexLocation = 0; // simple layout, assume have only positions at location = 0
@@ -220,7 +238,6 @@ int main(int argc, char** argv)
     glVertexAttribPointer(vertexLocation, 2, GL_FLOAT, GL_FALSE, 0, 0);                            GL_CHECK_ERRORS;
 
     glBindVertexArray(0);
-
 
 	//цикл обработки сообщений и отрисовки сцены каждый кадр
 	while (!glfwWindowShouldClose(window))
@@ -241,6 +258,7 @@ int main(int argc, char** argv)
         program.SetUniform("g_screenWidth" , WIDTH);
         program.SetUniform("g_screenHeight", HEIGHT);
         program.SetUniform("show_soft_shadows", soft_shadows);
+        program.SetUniform("time", float(glfwGetTime()));
         // очистка и заполнение экрана цвет//
         glViewport  (0, 0, WIDTH, HEIGHT);
         glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
