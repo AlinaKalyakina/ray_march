@@ -16,7 +16,7 @@ static GLsizei WIDTH = 512, HEIGHT = 512; //размеры окна
 
 using namespace LiteMath;
 
-float3 g_camPos(0, 0, 3);//
+float3 g_camPos(0, 1, 3);//
 float3 view_dir(0, 0, -1);
 float  cam_rot[2] = {0,0};
 int    mx = 0, my = 0;
@@ -26,10 +26,7 @@ const float max_speed = 4;
 //const float acceleration = 1.5;
 bool soft_shadows = false;
 bool fog = false;
-std::string tex_path = "../mp_awup/";
-//std::string textures[] = {"rt.tga", "bk.tga",
-//                          "up.tga", "dn.tga",
-//                          "lf.tga","ft.tga"};
+std::string tex_path = "../tex/";
 
 std::string textures[] = {"ft.tga", "bk.tga",
                           "up.tga", "dn.tga",
@@ -205,9 +202,10 @@ int main(int argc, char** argv)
       1.0f,  1.0f,	// v2 - top right corner
       1.0f, -1.0f	  // v3 - bottom right corner
     };
-    unsigned int texture;
-    glGenTextures(1, &texture);
-    glBindTexture(GL_TEXTURE_CUBE_MAP, texture);
+    unsigned int cubemap;
+    glActiveTexture(GL_TEXTURE0);
+    glGenTextures(1, &cubemap);
+    glBindTexture(GL_TEXTURE_CUBE_MAP, cubemap);
     int width, height, nrChannels;
     unsigned char* image;
     for (GLuint i = 0; i < 6; i++) {
@@ -216,12 +214,23 @@ int main(int argc, char** argv)
                      0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, image);
         stbi_image_free(image);
     }
-    //glGenerateTextureMipmap(texture);
+    //glGenerateTextureMipmap(cubemap);
     glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
+
+    unsigned int texture;
+    glActiveTexture(GL_TEXTURE1);
+    glGenTextures(1, &texture);
+    glBindTexture(GL_TEXTURE_2D, texture);
+    image = stbi_load((tex_path + "plane.jpg").c_str(), &width, &height, &nrChannels, 0);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, image);
+    glGenerateMipmap(GL_TEXTURE_2D);
+    stbi_image_free(image);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
 
     g_vertexBufferObject = 0;
     GLuint vertexLocation = 0; // simple layout, assume have only positions at location = 0
@@ -258,7 +267,13 @@ int main(int argc, char** argv)
         program.SetUniform("g_screenWidth" , WIDTH);
         program.SetUniform("g_screenHeight", HEIGHT);
         program.SetUniform("show_soft_shadows", soft_shadows);
-        program.SetUniform("time", float(glfwGetTime()));
+
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_CUBE_MAP, cubemap);
+        program.SetUniform("Cube", 0);
+        glActiveTexture(GL_TEXTURE1);
+        glBindTexture(GL_TEXTURE_2D, texture);
+        program.SetUniform("Plane", 1);
         // очистка и заполнение экрана цвет//
         glViewport  (0, 0, WIDTH, HEIGHT);
         glClearColor(0.0f, 0.0f, 0.0f, 0.0f);

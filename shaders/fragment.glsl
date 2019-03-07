@@ -12,15 +12,16 @@
 #define max_dist 15
 #define max_it 1000
 #define penumbra_factor 12.0
-#define PRIM_NUM 1
+#define PRIM_NUM 2
 #define LIGHTS_NUM 2
 #define MANDELBULB_POW 8
 #define MANDELBULB_P 2
 #define MANDELBULB_Q 2
 
-uniform float ambient = 0.2;
+uniform float ambient = 0.5;
 
 uniform samplerCube Cube;
+uniform sampler2D Plane;
 
 in float2 fragmentTexCoord;
 
@@ -28,7 +29,6 @@ layout(location = 0) out vec4 fragColor;
 
 uniform bool show_soft_shadows = false;
 uniform bool show_fog = false;
-uniform float time;
 
 uniform int g_screenWidth = 512;
 uniform int g_screenHeight = 512;
@@ -56,7 +56,7 @@ struct Object {
 
 uniform Material materials[] = Material[] (
                                 Material(1, 1, 1024, 0, 0, 1.1),
-                                Material(1, 1, 128, 0, 0.5, 1),
+                                Material(1, 1, 128, 0, 0, 1),
                                 Material(1, 1, 128, 0, 0, 1),
                                 Material(1, 1, 2048,0.5, 0, 1.0));
 
@@ -288,6 +288,7 @@ float DistanceEvaluation(vec3 p, int id){
     //Object obj = objects[id];
     switch(id){
         case 0:
+            return p.y;
             //return sdTorus(p, vec2(2, 1));
             //mat4 m = rotate_X(time/10);//*rotate_X(0.25*time/10)*rotate_Y(3.14*0.5 + time/10);
             //vec4 q = inverse(m)*vec4(p, 1.0);
@@ -298,7 +299,9 @@ float DistanceEvaluation(vec3 p, int id){
             //return map(p);
             //return max(sdSphere(float3(0, 0.7, 0.0) - p, 0.3), -sdBox(p - float3(0, 0.75, 0.0), float3(0.1, 0.1, 1)));
             return sdSphere(p, 1);
-        case 1: //cylinder
+        case 1:
+              vec3 d = abs(p - vec3(0, 0.08, 0)) - vec3(2.4, 0.08, 2.4);
+              return min(max(d.x,max(d.y,d.z)),0.0) + length(max(d,0.0));
             return sdSphere(float3(-0.5, 1, 0.75) - p, 0.5);
             //return sdCappedCylinder(obj.centre - p, obj.info.xy);
         case 2: //torus
@@ -309,6 +312,23 @@ float DistanceEvaluation(vec3 p, int id){
         //case 5:
     }
     return 0.;
+}
+
+vec4 color(vec3 pos, int id) {
+switch(id) {
+    case 0:
+        return texture(Plane, pos.xz);
+    case 1:
+        if (pos.y < 0.16 - eps/2) {
+            return vec4(1, 0.8, 0.83, 1);
+        }
+        ivec2 p = ivec2(ceil(pos.xz/0.6));
+        if (mod((p.x + p.y), 2) == 0) {
+            return vec4(0.96, 0.96, 0.86, 1);
+        } else {
+            return vec4(0.2, 0.2, 0.2, 1);
+        }
+}
 }
 
 vec3 EstimateNormal(float3 z, int id)
@@ -422,19 +442,16 @@ float get_shade(Intersect hit, float3 ray_dir) {
         float att = lights[i].kc + lights[i].kl*d + lights[i].kq*d*d;
         //diffuse
         att = 1;
-        float n_dot_l = dot(hit.n, l);
-        if (n_dot_l > 0) {
-            intensity += lights[i].intensity* material.diffuse*n_dot_l*shadow/att;
-        }
-        //specular
+        float n_dot_l = max(dot(hit.n, l), 0);
+        intensity += lights[i].intensity* material.diffuse*n_dot_l*shadow;///att;
+             //specular
         if (material.spec != 0) {
             float3 r = 2*n_dot_l*hit.n - l;
             float r_dot_v = dot(r, -ray_dir);
             if (r_dot_v > 0) {
-                intensity += lights[i].intensity*pow(r_dot_v, material.spec)*shadow/att;
+                intensity += lights[i].intensity*pow(r_dot_v, material.spec)*shadow;//att;
             }
         }
-
     }
     return intensity;
 }
@@ -443,12 +460,36 @@ vec4 fog(float dist, vec4 color ) {
     return mix(color,vec4(0.5,0.5,0.6, 1), smoothstep(0.0,1.0,1.0 - exp( -dist*0.5 )/50.0) );
 }
 
+vec4 get_plane_color(vec3 point) {
+    float k = ambient, d, att;
+    vec4 color = texture(Plane, point.xz);
+    for (int i = 0; i < LIGHTS_NUM; i++) {
+        vec3 l = point - lights[i].pos;
+        d = length(l);
+        l = normalize(l);
+        Intersect hit =  ray_intersection(Ray(lights[i].pos, l));
+        if (hit.id == -1) {
+            k += lights[i].intensity*(-l.y);///(lights[i].kc + lights[i].kl*d + lights[i].kq*d*d);
+        }
+    }
+    return k*texture(Plane, point.xz);
+}
+
 vec4 ray_march(inout Stack_frame frame, float4 prev_ret) {
     if (frame.phase == 0) {
         frame.color = float4(0, 0,0,0);
         frame.hit = ray_intersection(frame.ray);
         if (frame.hit.id == -1) {
-            frame.color = texture(Cube, frame.ray.dir);
+            if (frame.ray.dir.y < 0) {
+                //frame.color = get_plane_color(frame.ray.pos -frame.ray.pos.y/frame.ray.dir.y * frame.ray.dir);
+                frame.color = vec4(1, 1, 0, 1);
+                //frame.color = texture(Plane, frame.ray.pos.xz -
+                  //             frame.ray.pos.y/frame.ray.dir.y * vec2(frame.ray.dir.xz))*ambient;
+            }
+            else {
+                frame.color = texture(Cube, frame.ray.dir);
+            }
+            //frame.color = texture(Cube, frame.ray.dir);
             esp--;
             if (show_fog)
                 return fog(length(frame.hit.pos - frame.ray.pos), frame.color);
@@ -463,7 +504,7 @@ vec4 ray_march(inout Stack_frame frame, float4 prev_ret) {
              esp--;
              return objects[frame.id].color*get_shade(frame.hit, frame.ray.dir);
         }
-        frame.color += objects[frame.id].color*get_shade(frame.hit, frame.ray.dir) * (1 - materials[frame.material_id].reflection
+        frame.color += color(frame.hit.pos, frame.hit.id)*get_shade(frame.hit, frame.ray.dir) * (1 - materials[frame.material_id].reflection
                                                                    - materials[frame.material_id].refraction);
         if (materials[frame.material_id].reflection > 0) {
             float3 refl = reflect(frame.ray.dir, frame.hit.n);
@@ -522,7 +563,6 @@ void main(void)
 {
     float w = float(g_screenWidth);
     float h = float(g_screenHeight);
-
   // get curr pixelcoordinates
   //
     float x = fragmentTexCoord.x*w;
