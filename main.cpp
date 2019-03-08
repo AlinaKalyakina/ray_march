@@ -57,13 +57,12 @@ static void mouseMove(GLFWwindow* window, double xpos, double ypos) {
 
 static void mouseScroll(GLFWwindow* window, double xpos, double ypos) {
     g_camPos += ypos*view_dir*0.1;
-//    if(cam_fov <= 1.0f)
-//        cam_fov = 1.0f;
-//    if(cam_fov >= 45.0f)
-//        cam_fov = 45.0f;
 }
 
 static void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods){
+    if (action == GLFW_RELEASE && !(key == GLFW_KEY_RIGHT_SHIFT || key == GLFW_KEY_LEFT_SHIFT)) {
+        return;
+    }
     switch (key) {
         case GLFW_KEY_W:
             g_camPos += speed*view_dir;
