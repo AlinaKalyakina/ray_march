@@ -16,8 +16,8 @@ static GLsizei WIDTH = 512, HEIGHT = 512; //размеры окна
 
 using namespace LiteMath;
 
-float3 g_camPos(0, 1, 3);//
-float3 view_dir(0, 0, -1);
+float3 prev_g_camPos(0, 1, 3), g_camPos(0, 1, 3);
+float3 prev_view_dir(0, 0, -1), view_dir(0, 0, -1);
 float  cam_rot[2] = {0,0};
 int    mx = 0, my = 0;
 float speed = 0.1;
@@ -26,6 +26,7 @@ const float max_speed = 4;
 //const float acceleration = 1.5;
 bool soft_shadows = false;
 bool fog = false;
+std::string plane_name = "grass.jpg";
 std::string tex_path = "../tex/";
 
 std::string textures[] = {"ft.tga", "bk.tga",
@@ -224,7 +225,7 @@ int main(int argc, char** argv)
     glActiveTexture(GL_TEXTURE1);
     glGenTextures(1, &texture);
     glBindTexture(GL_TEXTURE_2D, texture);
-    image = stbi_load((tex_path + "plane.jpg").c_str(), &width, &height, &nrChannels, 0);
+    image = stbi_load((tex_path + plane_name).c_str(), &width, &height, &nrChannels, 0);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, image);
     glGenerateMipmap(GL_TEXTURE_2D);
     stbi_image_free(image);
@@ -250,6 +251,8 @@ int main(int argc, char** argv)
 	//цикл обработки сообщений и отрисовки сцены каждый кадр
 	while (!glfwWindowShouldClose(window))
 	{
+        prev_g_camPos = g_camPos;
+        prev_view_dir = view_dir;
 		glfwPollEvents();
 
 		//очищаем экран каждый кадр
@@ -261,6 +264,7 @@ int main(int argc, char** argv)
         float4x4 camRotMatrix   = mul(rotate_Y_4x4(-cam_rot[1]), rotate_X_4x4(+cam_rot[0]));
         float4x4 camTransMatrix = translate4x4(g_camPos);
         float4x4 rayMatrix      = mul(camTransMatrix, camRotMatrix);
+        program.SetUniform("moved", !(prev_view_dir == view_dir && prev_g_camPos == g_camPos));
         program.SetUniform("g_rayMatrix", rayMatrix);
         program.SetUniform("show_fog", fog);
         program.SetUniform("g_screenWidth" , WIDTH);

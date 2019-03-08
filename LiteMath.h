@@ -224,6 +224,7 @@ namespace LiteMath
   static inline float3 operator - (const float3 & u, const float3 & v) { return make_float3(u.x - v.x, u.y - v.y, u.z - v.z); }
   static inline float3 operator * (const float3 & u, const float3 & v) { return make_float3(u.x * v.x, u.y * v.y, u.z * v.z); }
   static inline float3 operator / (const float3 & u, const float3 & v) { return make_float3(u.x / v.x, u.y / v.y, u.z / v.z); }
+  static inline bool operator == (const float3 & u, const float3 & v) { return u.x == v.x && u.y == v.y&& u.z == v.z; }
 
   static inline float3 operator - (const float3 & u) { return make_float3(-u.x, -u.y, -u.z); }
 
