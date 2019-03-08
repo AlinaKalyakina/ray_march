@@ -5,14 +5,14 @@
 #define float4 vec4
 #define float4x4 mat4
 #define float3x3 mat3
-#define eps 1e-3
+#define eps 1e-4
 #define samples 6
 #define max_depth 3
 #define step 5e-2
-#define max_dist 15
+#define max_dist 50
 #define max_it 1000
 #define penumbra_factor 12.0
-#define PRIM_NUM 2
+#define PRIM_NUM 3
 #define LIGHTS_NUM 2
 #define MANDELBULB_POW 8
 #define MANDELBULB_P 2
@@ -55,9 +55,9 @@ struct Object {
         };
 
 uniform Material materials[] = Material[] (
-                                Material(1, 1, 1024, 0, 0, 1.1),
-                                Material(1, 1, 128, 0, 0, 1),
-                                Material(1, 1, 128, 0, 0, 1),
+                                Material(1, 1, 1024, 0.3, 0, 1),
+                                Material(1, 1, 128, 0.3, 0, 1),
+                                Material(1, 1, 128, 0, 0.6, 1.2),
                                 Material(1, 1, 2048,0.5, 0, 1.0));
 
 uniform Object objects[] = Object[](
@@ -121,12 +121,11 @@ float3 EyeRayDir(float x, float y, float w, float h, vec2 shift)
   return normalize(ray_dir);
 }
 
-mat4 rotate_X(float t)
+mat3 rotate_X(float t)
 {
-	return mat4(1.0, 0.0, 0.0,0,
-                0.0, cos(t), -sin(t),0,
-                0.0, sin(t), cos(t), 0,
-                0, 0, 0, 1);
+	return mat3(1.0, 0.0, 0.0,
+                0.0, cos(t), -sin(t),
+                0.0, sin(t), cos(t));
 }
 
 mat4 rotate_Y(float t)
@@ -250,12 +249,6 @@ float sdTorus(vec3 p, vec2 t)
   return length(q)-t.y;
 }
 
-float sdCappedCylinder( vec3 p, vec2 h )
-{
-  vec2 d = abs(vec2(length(p.xz),p.y)) - h;
-  return min(max(d.x,d.y),0.0) + length(max(d,0.0));
-}
-
 float sdBox( vec3 p, vec3 b )
 {
   vec3 d = abs(p) - b;
@@ -274,39 +267,52 @@ float opRep(vec3 p, vec3 c )
     return opDisplace(q);
 }
 
-float opTwist( vec3 p )
+float sdCappedCylinder( vec3 p, vec2 h )
 {
-    float c = cos(p.y*1.5);
-    float s = sin(p.y*1.5);
-    mat2  m = mat2(c,-s,s,c);
-    vec3  q = vec3(m*p.xz,p.y);
-    return sdTorus(q, vec2(1, 0.5));
+  vec2 d = abs(vec2(length(p.xz),p.y)) - h;
+  return min(max(d.x,d.y),0.0) + length(max(d,0.0));
 }
 
+float sdCone( vec3 p, vec2 c )
+{
+    // c must be normalized
+    float q = length(p.xy);
+    return dot(c,vec2(q,p.z));
+}
+
+float sdEllipsoid( in vec3 p, in vec3 r )
+{
+    return (length( p/r ) - 1.0) * min(min(r.x,r.y),r.z);
+}
 
 float DistanceEvaluation(vec3 p, int id){
     //Object obj = objects[id];
     switch(id){
         case 0:
             return p.y;
-            //return sdTorus(p, vec2(2, 1));
-            //mat4 m = rotate_X(time/10);//*rotate_X(0.25*time/10)*rotate_Y(3.14*0.5 + time/10);
-            //vec4 q = inverse(m)*vec4(p, 1.0);
-            //return opTwist(q.xyz);
-            //return sdBox(q.xyz, float3(1, 1, 1));
-            //return opRep(p, vec3(1.2, 1.2, 1.3));
-            //return opDisplace(p);
-            //return map(p);
-            //return max(sdSphere(float3(0, 0.7, 0.0) - p, 0.3), -sdBox(p - float3(0, 0.75, 0.0), float3(0.1, 0.1, 1)));
-            return sdSphere(p, 1);
         case 1:
-              vec3 d = abs(p - vec3(0, 0.08, 0)) - vec3(2.4, 0.08, 2.4);
-              return min(max(d.x,max(d.y,d.z)),0.0) + length(max(d,0.0));
-            return sdSphere(float3(-0.5, 1, 0.75) - p, 0.5);
-            //return sdCappedCylinder(obj.centre - p, obj.info.xy);
-        case 2: //torus
-            return sdSphere(float3(0.5, 1,  0.75) - p, 0.25);
-            //return sdTorus(obj.centre-p, obj.info.xy);
+            vec3 d = abs(p - vec3(0, 0.08, 0)) - vec3(2.4, 0.08, 2.4);
+            return min(max(d.x,max(d.y,d.z)),0.0) + length(max(d,0.0));
+        case 2:
+            float d1 = sdTorus(p-vec3(0.3, 0.55, 0.3), vec2(0.06, 0.035));
+            float d2 = max(sdCone((p - vec3(0.3, 0.7, 0.3)).xzy, vec2(0.95, 0.3)), p.y - 1.6);
+            d1 = min(d1, d2);
+            d2 = sdCappedCylinder(p - vec3(0.3, 0.21, 0.3), vec2(0.2, 0.05));
+            d1 = min(d1, d2);
+            d2 = sdEllipsoid(p - vec3(0.3, 0.65, 0.3), vec3(0.045, 0.07, 0.045));
+            return min(d1, d2);
+//            //vec2 t = vec2(0.2, 0.04);
+//            //p -= vec3(0.3, 0.2, 0.3);
+//            //vec2 q = vec2(length(p.xz)-t.x,p.y);
+//                        //return length(q)-t.y;
+//            p -= vec3(0.3, 0.8, 0.3);
+//            mat3 m = rotate_X(-3.14/2);
+//            vec3 p1 = m * p;
+//            vec2 c = vec2(0.8, 0.3);
+//                // c must be normalized
+//                float q = length(p1.xy);
+//                return max(dot(c,vec2(q,p1.z)), p.y - 1.6);
+
         case 3: //box
             return sdBox(p - float3(0, -0.5, 0), float3(100, 0.1, 100));
         //case 5:
@@ -315,19 +321,21 @@ float DistanceEvaluation(vec3 p, int id){
 }
 
 vec4 color(vec3 pos, int id) {
-switch(id) {
-    case 0:
-        return texture(Plane, pos.xz);
-    case 1:
-        if (pos.y < 0.16 - eps/2) {
-            return vec4(1, 0.8, 0.83, 1);
-        }
-        ivec2 p = ivec2(ceil(pos.xz/0.6));
-        if (mod((p.x + p.y), 2) == 0) {
-            return vec4(0.96, 0.96, 0.86, 1);
-        } else {
-            return vec4(0.2, 0.2, 0.2, 1);
-        }
+    switch(id) {
+        case 0:
+            return texture(Plane, pos.xz);
+        case 1:
+            if (pos.y < 0.16 - eps/2) {
+                return vec4(1, 0.8, 0.83, 1);
+            }
+            ivec2 p = ivec2(ceil(pos.xz/0.6));
+            if (mod((p.x + p.y), 2) == 0) {
+                return vec4(0.96, 0.96, 0.86, 1);
+            } else {
+                return vec4(0.2, 0.2, 0.2, 1);
+            }
+        case 2:
+            return vec4(0, 0,1, 1);
 }
 }
 
@@ -401,9 +409,6 @@ Intersect ray_intersection(Ray ray) {
     vec3 n;
     if (object_id != -1) {
         n = EstimateNormal(ray.pos, object_id);
-//        if (dot(n, ray.dir) > 0) {
-//            n = -n;
-//        }
     }
     Intersect res = Intersect(object_id, ray.pos, n);
     return res;
@@ -481,7 +486,7 @@ vec4 ray_march(inout Stack_frame frame, float4 prev_ret) {
         frame.hit = ray_intersection(frame.ray);
         if (frame.hit.id == -1) {
             if (frame.ray.dir.y < 0) {
-                //frame.color = get_plane_color(frame.ray.pos -frame.ray.pos.y/frame.ray.dir.y * frame.ray.dir);
+                frame.color = get_plane_color(frame.ray.pos -frame.ray.pos.y/frame.ray.dir.y * frame.ray.dir);
                 frame.color = vec4(1, 1, 0, 1);
                 //frame.color = texture(Plane, frame.ray.pos.xz -
                   //             frame.ray.pos.y/frame.ray.dir.y * vec2(frame.ray.dir.xz))*ambient;
