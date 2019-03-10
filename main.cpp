@@ -55,14 +55,14 @@ void windowResize(GLFWwindow* window, int width, int height) {
 }
 
 static void mouseMove(GLFWwindow* window, double xpos, double ypos) {
-  xpos *= 0.05f;
-  ypos *= 0.05f;
+  xpos /=(90);
+  ypos /=(90);
 
   float x1 = xpos;
   float y1 = ypos;
 
-  cam_rot[1] += 0.1f*(x1 - mx);	//Изменение угола поворота
-  cam_rot[0] -= 0.1f*(y1 - my);
+  cam_rot[1] += (x1 - mx);	//Изменение угола поворота
+  cam_rot[0] -= (y1 - my);
 
   mx = xpos;
   my = ypos;
@@ -171,8 +171,8 @@ int main(int argc, char** argv)
 	}
     double x, y;
 	glfwGetCursorPos(window, &x, &y);
-	mx = 0.05*x;
-	my = 0.05*y;
+	mx = x/90;
+	my = y/90;
     glfwSetCursorPosCallback (window, mouseMove);
     glfwSetScrollCallback(window, mouseScroll);
     glfwSetWindowSizeCallback(window, windowResize);
