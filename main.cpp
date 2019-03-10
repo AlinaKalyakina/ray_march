@@ -13,18 +13,22 @@
 #include "stb_image.h"
 
 
-#define INIT_POS -3.40695, 2.8077, 4.83889
-#define INIT_ROT_0 -0.3
-#define INIT_ROT_1 0.6
+#define INIT_POS 0, 1.50, 6
+
+#define INIT_ROT_0 0//-0.3
+#define INIT_ROT_1 0//0.6
+#define INIT_ROT_2 0
+#define INIT_VIEW float3(0, 0, -1)
+#define INIT_RIGHT float3(1, 0, 0)
+#define INIT_UP float3(0, 1, 0)
 
 static GLsizei WIDTH = 512, HEIGHT = 512; //размеры окна
 
 using namespace LiteMath;
 
 float3 g_camPos(INIT_POS);
-float3 view_dir;
-float  cam_rot[2] = {INIT_ROT_0, INIT_ROT_1};
-int    mx = 0, my = 0;
+float  cam_rot[3] = {INIT_ROT_0, INIT_ROT_1, INIT_ROT_2};
+float    mx = 0, my = 0;
 float speed = 0.1;
 const float max_speed = 4;
 //const float init_speed = 0.1;
@@ -40,6 +44,11 @@ std::string textures[] = {"ft.tga", "bk.tga",
 bool moved = true;
 
 
+float4x4 get_cam_rot() {
+    return mul(rotate_Z_4x4(cam_rot[2]), \
+                            mul(rotate_Y_4x4(-cam_rot[1]), rotate_X_4x4(+cam_rot[0])));
+}
+
 void windowResize(GLFWwindow* window, int width, int height) {
   WIDTH  = width;
   HEIGHT = height;
@@ -49,21 +58,18 @@ static void mouseMove(GLFWwindow* window, double xpos, double ypos) {
   xpos *= 0.05f;
   ypos *= 0.05f;
 
-  int x1 = int(xpos);
-  int y1 = int(ypos);
+  float x1 = xpos;
+  float y1 = ypos;
 
-  cam_rot[1] += 0.05f*(x1 - mx);	//Изменение угола поворота
-  cam_rot[0] -= 0.05f*(y1 - my);
-  view_dir.x = cos(cam_rot[0])*sin(cam_rot[1]);
-  view_dir.y = sin(cam_rot[0]);
-  view_dir.z = -cos(cam_rot[0])*cos(cam_rot[1]);
+  cam_rot[1] += 0.1f*(x1 - mx);	//Изменение угола поворота
+  cam_rot[0] -= 0.1f*(y1 - my);
 
-  mx = int(xpos);
-  my = int(ypos);
+  mx = xpos;
+  my = ypos;
 }
 
 static void mouseScroll(GLFWwindow* window, double xpos, double ypos) {
-    g_camPos += ypos*view_dir*0.1;
+    g_camPos += ypos*0.1*mul(get_cam_rot(), INIT_VIEW);
 }
 
 static void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods){
@@ -72,39 +78,37 @@ static void keyCallback(GLFWwindow* window, int key, int scancode, int action, i
     }
     switch (key) {
         case GLFW_KEY_W:
-            g_camPos += speed*view_dir;
+            g_camPos += speed*mul(get_cam_rot(), INIT_VIEW);
             break;
         case GLFW_KEY_S:
-            g_camPos -= speed*view_dir;
+            g_camPos -= speed*mul(get_cam_rot(), INIT_VIEW);
             break;
         case GLFW_KEY_D:
-            g_camPos -= speed*float3(view_dir.z, 0, -view_dir.x);
+            g_camPos += speed*mul(get_cam_rot(), INIT_RIGHT);
             break;
         case GLFW_KEY_A:
-            g_camPos += speed*float3(view_dir.z, 0, -view_dir.x);
+            g_camPos -= speed*mul(get_cam_rot(), INIT_RIGHT);
             break;
         case GLFW_KEY_Q:
-            cam_rot[1] -= speed;
+            cam_rot[2] += speed;
             break;
         case GLFW_KEY_E:
-            cam_rot[1]+= speed;
+            cam_rot[2] -= speed;
             break;
         case GLFW_KEY_R:
-            cam_rot[0] += speed;
+
+            g_camPos += speed*mul(get_cam_rot(), INIT_UP);
             break;
         case GLFW_KEY_F:
-            cam_rot[0] -= speed;
+            g_camPos -= speed*mul(get_cam_rot(), INIT_UP);
             break;
         case GLFW_KEY_0:
             cam_rot[0] = INIT_ROT_0;
             cam_rot[1] = INIT_ROT_1;
+            cam_rot[2] = INIT_ROT_2;
             g_camPos = float3(INIT_POS);
-            break;
-        case GLFW_KEY_T:
-            g_camPos.y += speed;
-            break;
-        case GLFW_KEY_G:
-            g_camPos.y -= speed;
+            fog = false;
+            soft_shadows = false;
             break;
         case GLFW_KEY_1:
             if (action == GLFW_PRESS)
@@ -114,10 +118,6 @@ static void keyCallback(GLFWwindow* window, int key, int scancode, int action, i
             if (action == GLFW_PRESS)
                 fog = ! fog;
             return;
-//        case GLFW_KEY_3:
-//            if (action == GLFW_PRESS)
-//                anti_aliasing = !anti_aliasing;
-//            return;
         case GLFW_KEY_LEFT_SHIFT:
         case GLFW_KEY_RIGHT_SHIFT:
             if (speed < max_speed && action == GLFW_PRESS) {
@@ -131,9 +131,6 @@ static void keyCallback(GLFWwindow* window, int key, int scancode, int action, i
     if (g_camPos.y < 0) {
         g_camPos.y = 0;
     }
-    view_dir.x = cos(cam_rot[0])*sin(cam_rot[1]);
-    view_dir.y = sin(cam_rot[0]);
-    view_dir.z = -cos(cam_rot[0])*cos(cam_rot[1]);
     moved = true;
 }
 
@@ -156,9 +153,6 @@ int initGL() {
 
 int main(int argc, char** argv)
 {
-    view_dir.x = cos(cam_rot[0])*sin(cam_rot[1]);
-    view_dir.y = sin(cam_rot[0]);
-    view_dir.z = -cos(cam_rot[0])*cos(cam_rot[1]);
 	if(!glfwInit())
     return -1;
 //
@@ -177,8 +171,8 @@ int main(int argc, char** argv)
 	}
     double x, y;
 	glfwGetCursorPos(window, &x, &y);
-	mx = int(0.05*x);
-	my = int(0.05*y);
+	mx = 0.05*x;
+	my = 0.05*y;
     glfwSetCursorPosCallback (window, mouseMove);
     glfwSetScrollCallback(window, mouseScroll);
     glfwSetWindowSizeCallback(window, windowResize);
@@ -277,7 +271,7 @@ int main(int argc, char** argv)
 
         program.StartUseShader();                          GL_CHECK_ERRORS;
 
-        float4x4 camRotMatrix   = mul(rotate_Y_4x4(-cam_rot[1]), rotate_X_4x4(+cam_rot[0]));
+        float4x4 camRotMatrix   = get_cam_rot();
         float4x4 camTransMatrix = translate4x4(g_camPos);
         float4x4 rayMatrix      = mul(camTransMatrix, camRotMatrix);
         program.SetUniform("moved", moved);//!(prev_view_dir == view_dir && prev_g_camPos == g_camPos));

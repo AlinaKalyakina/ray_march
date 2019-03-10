@@ -334,7 +334,7 @@ namespace LiteMath
     return res;
   }
 
-  static inline float3 mul(float4x4 m, float3 v)
+  static inline float3 mul(const float4x4 m, const float3 v)
   {
     float3 res;
     res.x = m.row[0].x*v.x + m.row[0].y*v.y + m.row[0].z*v.z + m.row[0].w;

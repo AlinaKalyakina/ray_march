@@ -1,6 +1,6 @@
 #version 330
 
-#define USE_ANTI_ALIASING 1
+#define USE_ANTI_ALIASING 0
 #define eps 1e-3
 #define samples 5
 #define max_depth 4
@@ -41,7 +41,7 @@ struct Material {
 
 uniform Material materials[] = Material[] (
                                 Material(1, 1, -1, 0, 0, 1),
-                                Material(1, 1, -1, 0.5, 0, 1),
+                                Material(1, 1, 4096, 0.5, 0, 1),
                                 Material(1, 1, -1, 0, 0.7, 1.2),
                                 Material(1, 1, -1,0, 0, 1.0));
 
@@ -447,12 +447,13 @@ vec4 main_function(float w, float h, float x, float y, float x_shift, float y_sh
 
 void main(void)
 {
+    //vec2 pix_coord = 0.5 + mat2(cos(view_angle), sin(view_angle), -sin(view_angle), cos(view_angle))*(fragmentTexCoord -0.5);
     float w = float(g_screenWidth);
     float h = float(g_screenHeight);
   // get curr pixelcoordinates
   //
     float x = fragmentTexCoord.x*w;
-    float y = fragmentTexCoord.y*h;
+    float y =fragmentTexCoord.y*h;
   // generate initial ray
   #if USE_ANTI_ALIASING == 1
     if (moved) {
