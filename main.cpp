@@ -12,13 +12,18 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 
+
+#define INIT_POS -3.40695, 2.8077, 4.83889
+#define INIT_ROT_0 -0.3
+#define INIT_ROT_1 0.6
+
 static GLsizei WIDTH = 512, HEIGHT = 512; //размеры окна
 
 using namespace LiteMath;
 
-float3 prev_g_camPos(0, 1, 3), g_camPos(0, 1, 3);
-float3 prev_view_dir(0, 0, -1), view_dir(0, 0, -1);
-float  cam_rot[2] = {0,0};
+float3 g_camPos(INIT_POS);
+float3 view_dir;
+float  cam_rot[2] = {INIT_ROT_0, INIT_ROT_1};
 int    mx = 0, my = 0;
 float speed = 0.1;
 const float max_speed = 4;
@@ -32,6 +37,7 @@ std::string tex_path = "../tex/";
 std::string textures[] = {"ft.tga", "bk.tga",
                           "up.tga", "dn.tga",
                           "rt.tga", "lf.tga"};
+bool moved = true;
 
 
 void windowResize(GLFWwindow* window, int width, int height) {
@@ -90,8 +96,9 @@ static void keyCallback(GLFWwindow* window, int key, int scancode, int action, i
             cam_rot[0] -= speed;
             break;
         case GLFW_KEY_0:
-            cam_rot[0] = cam_rot[1] = 0;
-            g_camPos = float3(0, 0, 3);
+            cam_rot[0] = INIT_ROT_0;
+            cam_rot[1] = INIT_ROT_1;
+            g_camPos = float3(INIT_POS);
             break;
         case GLFW_KEY_T:
             g_camPos.y += speed;
@@ -102,11 +109,15 @@ static void keyCallback(GLFWwindow* window, int key, int scancode, int action, i
         case GLFW_KEY_1:
             if (action == GLFW_PRESS)
                 soft_shadows = ! soft_shadows;
-            break;
+            return;
         case GLFW_KEY_2:
             if (action == GLFW_PRESS)
                 fog = ! fog;
-            break;
+            return;
+//        case GLFW_KEY_3:
+//            if (action == GLFW_PRESS)
+//                anti_aliasing = !anti_aliasing;
+//            return;
         case GLFW_KEY_LEFT_SHIFT:
         case GLFW_KEY_RIGHT_SHIFT:
             if (speed < max_speed && action == GLFW_PRESS) {
@@ -115,7 +126,7 @@ static void keyCallback(GLFWwindow* window, int key, int scancode, int action, i
             if (action == GLFW_RELEASE)
                 speed = 0.1;
             printf("%lf ", speed);
-            break;
+            return;
     }
     if (g_camPos.y < 0) {
         g_camPos.y = 0;
@@ -123,6 +134,7 @@ static void keyCallback(GLFWwindow* window, int key, int scancode, int action, i
     view_dir.x = cos(cam_rot[0])*sin(cam_rot[1]);
     view_dir.y = sin(cam_rot[0]);
     view_dir.z = -cos(cam_rot[0])*cos(cam_rot[1]);
+    moved = true;
 }
 
 int initGL() {
@@ -144,6 +156,9 @@ int initGL() {
 
 int main(int argc, char** argv)
 {
+    view_dir.x = cos(cam_rot[0])*sin(cam_rot[1]);
+    view_dir.y = sin(cam_rot[0]);
+    view_dir.z = -cos(cam_rot[0])*cos(cam_rot[1]);
 	if(!glfwInit())
     return -1;
 //
@@ -164,7 +179,7 @@ int main(int argc, char** argv)
 	glfwGetCursorPos(window, &x, &y);
 	mx = int(0.05*x);
 	my = int(0.05*y);
-    //glfwSetCursorPosCallback (window, mouseMove);
+    glfwSetCursorPosCallback (window, mouseMove);
     glfwSetScrollCallback(window, mouseScroll);
     glfwSetWindowSizeCallback(window, windowResize);
     glfwSetKeyCallback(window, keyCallback);
@@ -185,9 +200,11 @@ int main(int argc, char** argv)
 	std::unordered_map<GLenum, std::string> shaders;
 	shaders[GL_VERTEX_SHADER]   = "../shaders/vertex.glsl";
 	shaders[GL_FRAGMENT_SHADER] = "../shaders/fragment.glsl";
+	time_t t = time(NULL);
+	std::cerr << "Compiling shader...." << std::endl;
 	ShaderProgram program(shaders); GL_CHECK_ERRORS;//
-
-  glfwSwapInterval(1); // force 60 frames per second
+    std::cerr << "Shader was compiled in " << time(NULL)-t << "seconds" << std::endl;
+  glfwSwapInterval(4); // force 60 frames per second
   
   //Создаем и загружаем геометрию поверхности
   //
@@ -229,6 +246,8 @@ int main(int argc, char** argv)
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, image);
     glGenerateMipmap(GL_TEXTURE_2D);
     stbi_image_free(image);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
 
@@ -247,14 +266,11 @@ int main(int argc, char** argv)
     glVertexAttribPointer(vertexLocation, 2, GL_FLOAT, GL_FALSE, 0, 0);                            GL_CHECK_ERRORS;
 
     glBindVertexArray(0);
-
+    //bool first_time = true;
 	//цикл обработки сообщений и отрисовки сцены каждый кадр
 	while (!glfwWindowShouldClose(window))
 	{
-        prev_g_camPos = g_camPos;
-        prev_view_dir = view_dir;
 		glfwPollEvents();
-
 		//очищаем экран каждый кадр
 		glClearColor(0.1f, 0.1f, 0.1f, 1.0f);               GL_CHECK_ERRORS;
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT); GL_CHECK_ERRORS;
@@ -264,7 +280,7 @@ int main(int argc, char** argv)
         float4x4 camRotMatrix   = mul(rotate_Y_4x4(-cam_rot[1]), rotate_X_4x4(+cam_rot[0]));
         float4x4 camTransMatrix = translate4x4(g_camPos);
         float4x4 rayMatrix      = mul(camTransMatrix, camRotMatrix);
-        program.SetUniform("moved", !(prev_view_dir == view_dir && prev_g_camPos == g_camPos));
+        program.SetUniform("moved", moved);//!(prev_view_dir == view_dir && prev_g_camPos == g_camPos));
         program.SetUniform("g_rayMatrix", rayMatrix);
         program.SetUniform("show_fog", fog);
         program.SetUniform("g_screenWidth" , WIDTH);
@@ -285,8 +301,9 @@ int main(int argc, char** argv)
     // draw calli
     //
     glBindVertexArray(g_vertexArrayObject); GL_CHECK_ERRORS;
-    glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);  GL_CHECK_ERRORS;  // The last parameter of glDrawArrays is equal to VS invocations
-    
+    glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);  GL_CHECK_ERRORS;  // The last parameter of glDrawArrays is equal to VS invocation
+        moved = false;
+        //first_time = false;
     program.StopUseShader();
 
 		glfwSwapBuffers(window); 

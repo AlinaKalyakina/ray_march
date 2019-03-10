@@ -1,27 +1,23 @@
 #version 330
 
-#define float2 vec2
-#define float3 vec3
-#define float4 vec4
-#define float4x4 mat4
-#define float3x3 mat3
-#define eps 1e-4
+#define USE_ANTI_ALIASING 1
+#define eps 1e-3
 #define samples 5
-#define max_depth 3
-#define step 5e-2
-#define max_dist 50
+#define max_depth 4
+#define step 1e-1
 #define max_it 100
 #define penumbra_factor 12.0
 #define PRIM_NUM 5
 #define LIGHTS_NUM 2
 #define ambient_light 0.3
+#define MAX_ANGLE 0.04
 
-uniform bool moved = false;
+uniform bool moved = true;
 
 uniform samplerCube Cube;
 uniform sampler2D Plane;
 
-in float2 fragmentTexCoord;
+in vec2 fragmentTexCoord;
 
 layout(location = 0) out vec4 fragColor;
 
@@ -31,12 +27,7 @@ uniform bool show_fog = false;
 uniform int g_screenWidth = 512;
 uniform int g_screenHeight = 512;
 
-uniform float3 g_bBoxMin   = float3(-1,-1,-1);
-uniform float3 g_bBoxMax   = float3(+1,+1,+1);
-
-uniform float4x4 g_rayMatrix;
-
-uniform float4 g_bgColor = float4(0,0,0.3,1);
+uniform mat4 g_rayMatrix;
 
 struct Material {
         float ambient;
@@ -49,36 +40,34 @@ struct Material {
 
 
 uniform Material materials[] = Material[] (
-                                Material(1, 1, 1024, 0, 0, 1),
-                                Material(1, 1, 128, 0, 0, 1),
-                                Material(1, 1, 128, 0.5, 0, 1.2),
-                                Material(1, 1, 2048,0, 0, 1.0));
+                                Material(1, 1, -1, 0, 0, 1),
+                                Material(1, 1, -1, 0.5, 0, 1),
+                                Material(1, 1, -1, 0, 0.7, 1.2),
+                                Material(1, 1, -1,0, 0, 1.0));
 
 uniform int objects[] = int[](0, 1, 2, 3, 2);
 
 struct Point_light {
         float intensity;
-        float3 pos;
+        vec3 pos;
         float kc;
         float kl;
         float kq;
     };
 
 uniform Point_light lights[] = Point_light[](
-                            Point_light(.4, float3(0, 5, 0), 0.1, 0.01, 0.00001),
-                            Point_light(0.4, float3(0, 4, 0), 0.1, 0.01, 0.00001));//,
-                            //point_light(0.2, float3(0, -2, 2)),
-                            //point_light(0.2, float3(0, 2, 0)));
+                            Point_light(.4, vec3(0, 3, 0), 0.91, 0.01, 0.00001),
+                            Point_light(0.4, vec3(1.2, 4, 1.2), 0.91, 0.01, 0.00001));
 
 struct Intersect {
         int id;
-        float3 pos;
-        float3 n;//outer nornal
+        vec3 pos;
+        vec3 n;//outer nornal
 };
 
 struct Ray {
-        float3 pos;
-        float3 dir;
+        vec3 pos;
+        vec3 dir;
         };
 
 struct Stack_frame {
@@ -92,12 +81,13 @@ struct Stack_frame {
 };
 
 int esp = 1;
+float max_dist;
 
-Stack_frame stack[4];
+Stack_frame stack[5];
 
-float3 EyeRayDir(float x, float y, float w, float h) {
+vec3 EyeRayDir(float x, float y, float w, float h) {
 	float fov = 3.141592654f/(2.0f); 
-    float3 ray_dir;
+    vec3 ray_dir;
   
 	ray_dir.x = x+.5 - (w/2.0f);
 	ray_dir.y = y+.5 - (h/2.0f);
@@ -106,32 +96,15 @@ float3 EyeRayDir(float x, float y, float w, float h) {
   return normalize(ray_dir);
 }
 
-mat3 rotate_X(float t) {
-	return mat3(1.0, 0.0, 0.0,
-                0.0, cos(t), -sin(t),
-                0.0, sin(t), cos(t));
-}
-
 mat3 rotate_Y(float t) {
 	return mat3(cos(t), 0.0, -sin(t),
                 0.0, 1.0, 0.0,
                 sin(t), 0.0, cos(t));
 }
 
-mat3 rotate_Z(float t) {
-    return mat3(cos(t), -sin(t), 0.0,
-                sin(t), cos(t), 0.0,
-                0.0, 0.0, 1.0);
-}
-
-
 float smin( float a, float b, float k ) {
     float h = clamp( 0.5+0.5*(b-a)/k, 0.0, 1.0 );
     return mix( b, a, h ) - k*h*(1.0-h);
-}
-
-float sdSphere(vec3 p, float s) {
-  return length(p)-s;
 }
 
 float sdTorus(vec3 p, vec2 t) {
@@ -187,7 +160,6 @@ float fractal1(vec3 p) {
     float d = sdBox(p, vec3(1, 1, 1));
     float s = 1.0, da, db, dc, c;
     vec3 a, r;
-    int maxit = moved?2:4;
     for (int i = 0; i < 4; i++) {
         a = mod( p*s, 2.0 )-1.0;
         s *= 3;
@@ -209,12 +181,12 @@ float DistanceEvaluation(vec3 p, int id){
             vec3 d = abs(p - vec3(0, 0.08, 0)) - vec3(2.4, 0.08, 2.4);
             return min(max(d.x,max(d.y,d.z)),0.0) + length(max(d,0.0));
         case 2:
-            return sdPawn(p - vec3(0.3, 0.16, 0.3));
+            return sdPawn(p - vec3(-0.3, 0.16, 0.3));
         case 3:
             p -= vec3(4, 1, -3);
             return fractal1(rotate_Y(3.14/6)*p);
         case 4:
-            return sdKing(p - vec3(-0.3, 0.16, -0.3));
+            return sdKing(p - vec3(-0.9, 0.16, -0.3));
     }
     return 0.;
 }
@@ -237,25 +209,25 @@ vec4 color(vec3 pos, int id) {
         case 4:
             return vec4(1, 1,1, 1);
         case 3:
-            return vec4(1, 0.5, 0.12, 1);
+            return vec4(0.8, 0.4, 0.9, 1);
 
 }
 }
 
-vec3 EstimateNormal(float3 z, int id) {
-    float3 z1 = z + float3(eps, 0, 0);
-    float3 z2 = z - float3(eps, 0, 0);
-    float3 z3 = z + float3(0, eps, 0);
-    float3 z4 = z - float3(0, eps, 0);
-    float3 z5 = z + float3(0, 0, eps);
-    float3 z6 = z - float3(0, 0, eps);
+vec3 EstimateNormal(vec3 z, int id) {
+    vec3 z1 = z + vec3(eps, 0, 0);
+    vec3 z2 = z - vec3(eps, 0, 0);
+    vec3 z3 = z + vec3(0, eps, 0);
+    vec3 z4 = z - vec3(0, eps, 0);
+    vec3 z5 = z + vec3(0, 0, eps);
+    vec3 z6 = z - vec3(0, 0, eps);
     float dx = DistanceEvaluation(z1, id) - DistanceEvaluation(z2, id);
     float dy = DistanceEvaluation(z3, id) - DistanceEvaluation(z4, id);
     float dz = DistanceEvaluation(z5, id) - DistanceEvaluation(z6, id);
-    return normalize(float3(dx, dy, dz));
+    return normalize(vec3(dx, dy, dz));
 }
 
-float MinDist(float3 pos, out int object_id) {
+float MinDist(vec3 pos, out int object_id) {
     float cur_dist, min_dist = max_dist*10;
     object_id = 0;
     for(int i = 0; i < PRIM_NUM; i++) {
@@ -268,12 +240,13 @@ float MinDist(float3 pos, out int object_id) {
     return min_dist;
 }
 
-float Shadow(float3 point_pos, float3 ray_dir, float maxt) {
-    float ph = 1e20;
+float Shadow(vec3 point_pos, vec3 ray_dir, float maxt) {
+    float ph = 1e20, y, h;
     float res = 1.0;
     int id;
     float loc_eps = eps*0.01;
-    for (float t = eps*2; t < maxt; )
+    float t= 2*eps;
+    while (t < maxt)
     {
         float h = MinDist(point_pos + t*ray_dir, id);
         if(h < loc_eps) {
@@ -281,9 +254,9 @@ float Shadow(float3 point_pos, float3 ray_dir, float maxt) {
         }
         if (show_soft_shadows) {
             float y = h*h/(2.0*ph);
+            ph = h;
             float d = sqrt(h*h-y*y);
             res = min(res, penumbra_factor*h/max(0.0,t-y));
-            ph = h;
             }
         t += h;
     }
@@ -319,25 +292,25 @@ float get_occlusion(Intersect hit) {
     float occlusion = 1.0f;
     float dist;
     int id;
-    float3 step_vector = step*hit.n;
-    float3 cur_pos = hit.pos + step*hit.n;
+    vec3 step_vector = step*hit.n;
+    vec3 cur_pos = hit.pos + step*hit.n;
     for (int i = 1; i <= samples; i++) {
         dist = MinDist(cur_pos, id);
         occlusion -= pow(2, samples - i + 2)*(i * step - dist) / i*step;
         cur_pos += step_vector;
     }
 
-    return max(occlusion, 0);
+    return clamp(occlusion, 0, 1);
 }
 
-float get_shade(Intersect hit, float3 ray_dir) {
+float get_shade(Intersect hit, vec3 ray_dir) {
     Material material = materials[objects[hit.id]];
     //ambient
     float intensity = ambient_light * material.ambient* get_occlusion(hit);
     float shadow;
     Intersect result;//
     for (int i = 0; i < LIGHTS_NUM; i++) {
-        float3 l = normalize(lights[i].pos - hit.pos);
+        vec3 l = normalize(lights[i].pos - hit.pos);
         //shadow
         shadow = Shadow(hit.pos, l, length(lights[i].pos - hit.pos));
         if (shadow == 0.0) {
@@ -346,15 +319,13 @@ float get_shade(Intersect hit, float3 ray_dir) {
         float d = length(hit.pos - lights[i].pos);
         float att = lights[i].kc + lights[i].kl*d + lights[i].kq*d*d;
         //diffuse
-        att = 1;
         float n_dot_l = max(dot(hit.n, l), 0);
-        intensity += lights[i].intensity* material.diffuse*n_dot_l*shadow;///att;
+        intensity += lights[i].intensity* material.diffuse*n_dot_l*shadow/att;
              //specular
-        if (material.spec != 0) {
-            float3 r = 2*n_dot_l*hit.n - l;
-            float r_dot_v = dot(r, -ray_dir);
+        if (material.spec != -1) {
+            float r_dot_v = dot(2*n_dot_l*hit.n - l, -ray_dir);
             if (r_dot_v > 0) {
-                intensity += lights[i].intensity*pow(r_dot_v, material.spec)*shadow;//att;
+                intensity += lights[i].intensity*pow(r_dot_v, material.spec)*shadow/att;
             }
         }
     }
@@ -362,60 +333,48 @@ float get_shade(Intersect hit, float3 ray_dir) {
 }
 
 vec4 fog(float dist, vec4 color ) {
-    return mix(color,vec4(0.5,0.5,0.6, 1), smoothstep(0.0,1.0,dist/10.0) );
+    return mix(color,vec4(0.4,0.4,0.6, 1), smoothstep(0.0,1.0,sqrt(dist)/5.0) );
 }
 
-vec4 get_plane_color(vec3 point) {
-    float k = ambient_light, d, att;
-    vec4 color = texture(Plane, point.xz);
-    for (int i = 0; i < LIGHTS_NUM; i++) {
-        vec3 l = point - lights[i].pos;
-        d = length(l);
-        l = normalize(l);
-        Intersect hit =  ray_intersection(Ray(lights[i].pos, l));
-        if (hit.id == -1) {
-            k += lights[i].intensity*(-l.y);///(lights[i].kc + lights[i].kl*d + lights[i].kq*d*d);
-        }
-    }
-    return k*texture(Plane, point.xz);
-}
+//vec4 get_plane_color(vec3 point) {
+//    float k = ambient_light, d, att;
+//    vec4 color = texture(Plane, point.xz);
+//    for (int i = 0; i < LIGHTS_NUM; i++) {
+//        vec3 l = point - lights[i].pos;
+//        d = length(l);
+//        l = normalize(l);
+//        Intersect hit =  ray_intersection(Ray(lights[i].pos, l));
+//        if (hit.id == -1) {
+//            k += lights[i].intensity*(-l.y);///(lights[i].kc + lights[i].kl*d + lights[i].kq*d*d);
+//        }
+//    }
+//    return k*texture(Plane, point.xz);
+//}
 
-vec4 ray_march(inout Stack_frame frame, float4 prev_ret) {
+vec4 ray_march(inout Stack_frame frame, vec4 prev_ret) {
     if (frame.phase == 0) {
-        frame.color = float4(0, 0,0,0);
+        frame.color = vec4(0, 0,0,0);
         frame.hit = ray_intersection(frame.ray);
         if (frame.hit.id == -1) {
-//            if (frame.ray.dir.y < 0) {
-//                //frame.color = get_plane_color(frame.ray.pos -frame.ray.pos.y/frame.ray.dir.y * frame.ray.dir);
-//                frame.color = vec4(1, 1, 0, 1);
-//                //frame.color = texture(Plane, frame.ray.pos.xz -
-//                  //             frame.ray.pos.y/frame.ray.dir.y * vec2(frame.ray.dir.xz))*ambient;
-//            }
-//            else {
-//                frame.color = texture(Cube, frame.ray.dir);
-//            }
             frame.color = texture(Cube, frame.ray.dir);
             esp--;
             if (show_fog)
-                return fog(length(frame.hit.pos - frame.ray.pos), frame.color);
-            //return vec4(1, 1, 0, 1);
+                return fog(length(frame.hit.pos - frame.ray.pos), frame.color);;
             return frame.color;
         }
-        //esp--;
-        //return vec4(1, 0, 0, 1);
         frame.id = frame.hit.id;
         frame.material_id = objects[frame.id];
-        if (frame.depth >= max_depth || moved) {
+        if (frame.depth >= max_depth) {
              esp--;
              return color(frame.hit.pos, frame.id)*get_shade(frame.hit, frame.ray.dir);
         }
         frame.color += color(frame.hit.pos, frame.id)*get_shade(frame.hit, frame.ray.dir) * (1 - materials[frame.material_id].reflection
                                                                    - materials[frame.material_id].refraction);
         if (materials[frame.material_id].reflection > 0) {
-            float3 refl = reflect(frame.ray.dir, frame.hit.n);
+            vec3 refl = reflect(frame.ray.dir, frame.hit.n);
             vec3 shift = normalize(frame.ray.pos - frame.hit.pos);
             Ray refl_ray = Ray(frame.hit.pos + 2*eps*shift, refl);
-            stack[esp] = Stack_frame(0, refl_ray, float4(0, 0, 0, 0), frame.hit, frame.id, frame.material_id, frame.depth + 1);
+            stack[esp] = Stack_frame(0, refl_ray, vec4(0, 0, 0, 0), frame.hit, frame.id, frame.material_id, frame.depth + 1);
             esp++;
             frame.phase = 1;
             return frame.color;
@@ -438,14 +397,14 @@ vec4 ray_march(inout Stack_frame frame, float4 prev_ret) {
             } else {
                 eta2 = materials[frame.material_id].eta;
             }
-            float3 refr = refract(frame.ray.dir, frame.hit.n, eta1/eta2);
-            if (refr == float3(0, 0, 0)) {
+            vec3 refr = refract(frame.ray.dir, frame.hit.n, eta1/eta2);
+            if (refr == vec3(0, 0, 0)) {
                 esp--;
                 return frame.color + color(frame.hit.pos, frame.id) * materials[frame.material_id].refraction * get_shade(frame.hit, frame.ray.dir);
             }
             vec3 shift = normalize(-frame.ray.pos + frame.hit.pos);
             Ray refr_ray = Ray(frame.hit.pos + 2*eps*shift, -refr);
-            stack[esp] = Stack_frame(0, refr_ray, float4(0, 0, 0, 0), frame.hit, frame.id, frame.material_id, frame.depth + 1);
+            stack[esp] = Stack_frame(0, refr_ray, vec4(0, 0, 0, 0), frame.hit, frame.id, frame.material_id, frame.depth + 1);
             esp++;
             frame.phase = 2;
             return frame.color;
@@ -463,6 +422,28 @@ vec4 ray_march(inout Stack_frame frame, float4 prev_ret) {
     return frame.color;
 }
 
+vec4 main_function(float w, float h, float x, float y, float x_shift, float y_shift) {
+    vec3 ray_pos = vec3(0,0,0);
+    vec3 ray_dir = EyeRayDir(x+x_shift,y+y_shift,w,h);
+      // transorm ray with matrix
+      //
+    ray_pos = (g_rayMatrix*vec4(ray_pos,1)).xyz;
+    ray_dir = normalize(mat3(g_rayMatrix)*ray_dir);
+    max_dist = ray_pos.y/MAX_ANGLE;
+    int id;
+    ray_dir *= sign(MinDist(ray_pos, id));
+    Stack_frame zero_frame;
+    zero_frame.phase = 0;
+    zero_frame.ray = Ray(ray_pos, ray_dir);
+    zero_frame.depth = 0;
+    stack[0] = zero_frame;
+    vec4 c = vec4(0, 0, 0, 0);
+    esp = 1;
+    while (esp != 0) {
+        c = ray_march(stack[esp - 1], c);
+    }
+    return c;
+}
 
 void main(void)
 {
@@ -472,58 +453,21 @@ void main(void)
   //
     float x = fragmentTexCoord.x*w;
     float y = fragmentTexCoord.y*h;
-
   // generate initial ray
-  //
-    fragColor = vec4(0, 0, 0,0);
-    for (float x_shift = -1./3; x_shift < 0.5; x_shift += 2./3)
-        for (float y_shift = -1./3; y_shift < 0.5; y_shift += 2./3){
-            float3 ray_pos = float3(0,0,0);
-    float3 ray_dir = EyeRayDir(x+x_shift,y+y_shift,w,h);
-
-  // transorm ray with matrix
-  //
-    ray_pos = (g_rayMatrix*float4(ray_pos,1)).xyz;
-    ray_dir = normalize(float3x3(g_rayMatrix)*ray_dir);
-    //fragColor = texture(Cube, ray_dir);
-    //return;
-
-  // intersect bounding box of the whole scene, if no intersection found return background color
-    Stack_frame zero_frame;
-    zero_frame.phase = 0;
-    zero_frame.ray = Ray(ray_pos, ray_dir);
-    zero_frame.depth = 0;
-    stack[0] = zero_frame;
-    vec4 c = float4(0, 0, 0, 0);
-    while (esp != 0) {
-        c = ray_march(stack[esp - 1], c);
-    }
-    esp = 1;
-//    if (x_shift > 0.5 && y_shift > 0.5) {
-//        fragColor = mix(c, vec4(1, 1, 0, 1), 0.5);
-//        return;
-//    }
-    fragColor += c;
+  #if USE_ANTI_ALIASING == 1
     if (moved) {
-        return;
+        fragColor = main_function(w, h, x, y, 0, 0);
+    } else {
+        fragColor = vec4(0, 0, 0, 0);
+        for (float x_shift = -1./3; x_shift < 0.5; x_shift += 2./3)
+            for (float y_shift = -1./3; y_shift < 0.5; y_shift += 2./3) {
+                fragColor += main_function(w, h, x, y, x_shift, y_shift);
+            }
+        fragColor /= 4;
     }
-    }
-    fragColor /= 4;
-//    fragColor = res_color;
-//    return;
-//    float tmin = 1e38f;
-//    float tmax = 0;
-//
-//  if(!RayBoxIntersection(ray_pos, ray_dir, g_bBoxMin, g_bBoxMax, tmin, tmax))
-//  {
-//    fragColor = g_bgColor;
-//    return;
-//  }
-//
-//	float alpha = 1.0f;
-//	float3 color = RayMarchConstantFog(tmin, tmax, alpha);
-//	fragColor = float4(color,0)*(1.0f-alpha) + g_bgColor*alpha;
-//}
+  #else
+    fragColor = main_function(w, h, x, y, 0, 0);
+  #endif
 }
 
 
