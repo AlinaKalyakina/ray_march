@@ -42,7 +42,7 @@ std::string textures[] = {"ft.tga", "bk.tga",
                           "up.tga", "dn.tga",
                           "rt.tga", "lf.tga"};
 bool moved = true;
-
+bool escape = false;
 
 float4x4 get_cam_rot() {
     return mul(rotate_Z_4x4(cam_rot[2]), \
@@ -66,10 +66,12 @@ static void mouseMove(GLFWwindow* window, double xpos, double ypos) {
 
   mx = xpos;
   my = ypos;
+  moved = true;
 }
 
 static void mouseScroll(GLFWwindow* window, double xpos, double ypos) {
     g_camPos += ypos*0.1*mul(get_cam_rot(), INIT_VIEW);
+    moved = true;
 }
 
 static void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods){
@@ -79,28 +81,35 @@ static void keyCallback(GLFWwindow* window, int key, int scancode, int action, i
     switch (key) {
         case GLFW_KEY_W:
             g_camPos += speed*mul(get_cam_rot(), INIT_VIEW);
+            moved = true;
             break;
         case GLFW_KEY_S:
             g_camPos -= speed*mul(get_cam_rot(), INIT_VIEW);
+            moved = true;
             break;
         case GLFW_KEY_D:
             g_camPos += speed*mul(get_cam_rot(), INIT_RIGHT);
+            moved = true;
             break;
         case GLFW_KEY_A:
             g_camPos -= speed*mul(get_cam_rot(), INIT_RIGHT);
+            moved = true;
             break;
         case GLFW_KEY_Q:
             cam_rot[2] += speed;
+            moved = true;
             break;
         case GLFW_KEY_E:
             cam_rot[2] -= speed;
+            moved = true;
             break;
         case GLFW_KEY_R:
-
             g_camPos += speed*mul(get_cam_rot(), INIT_UP);
+            moved = true;
             break;
         case GLFW_KEY_F:
             g_camPos -= speed*mul(get_cam_rot(), INIT_UP);
+            moved = true;
             break;
         case GLFW_KEY_0:
             cam_rot[0] = INIT_ROT_0;
@@ -109,6 +118,7 @@ static void keyCallback(GLFWwindow* window, int key, int scancode, int action, i
             g_camPos = float3(INIT_POS);
             fog = false;
             soft_shadows = false;
+            moved = true;
             break;
         case GLFW_KEY_1:
             if (action == GLFW_PRESS)
@@ -127,11 +137,12 @@ static void keyCallback(GLFWwindow* window, int key, int scancode, int action, i
                 speed = 0.1;
             printf("%lf ", speed);
             return;
+        case GLFW_KEY_ESCAPE:
+        	escape = true;
     }
     if (g_camPos.y < 0) {
         g_camPos.y = 0;
     }
-    moved = true;
 }
 
 int initGL() {
@@ -262,7 +273,7 @@ int main(int argc, char** argv)
     glBindVertexArray(0);
     //bool first_time = true;
 	//цикл обработки сообщений и отрисовки сцены каждый кадр
-	while (!glfwWindowShouldClose(window))
+	while (!glfwWindowShouldClose(window) && !escape)
 	{
 		glfwPollEvents();
 		//очищаем экран каждый кадр

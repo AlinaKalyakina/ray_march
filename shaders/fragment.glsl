@@ -1,6 +1,6 @@
 #version 330
 
-#define USE_ANTI_ALIASING 0
+#define USE_ANTI_ALIASING 1
 #define eps 1e-3
 #define samples 5
 #define max_depth 4
@@ -267,7 +267,7 @@ Intersect ray_intersection(Ray ray) {
     float cur_dist, min_dist;
     float t = 0;
     int object_id = -1;
-    for(int i = 0; i < max_it; i++) {
+    for(int i = 0; i < (moved?max_it:max_it*5); i++) {
         min_dist = MinDist(ray.pos + t*ray.dir, object_id);
         t += min_dist;
         if (abs(min_dist) < eps/5) {
