@@ -184,7 +184,7 @@ int main(int argc, char** argv)
 	glfwGetCursorPos(window, &x, &y);
 	mx = x/90;
 	my = y/90;
-    glfwSetCursorPosCallback (window, mouseMove);
+    //glfwSetCursorPosCallback (window, mouseMove);
     glfwSetScrollCallback(window, mouseScroll);
     glfwSetWindowSizeCallback(window, windowResize);
     glfwSetKeyCallback(window, keyCallback);

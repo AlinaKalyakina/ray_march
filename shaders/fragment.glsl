@@ -42,7 +42,7 @@ struct Material {
 uniform Material materials[] = Material[] (
                                 Material(1, 1, -1, 0, 0, 1),
                                 Material(1, 1, 4096, 0.5, 0, 1),
-                                Material(1, 1, -1, 0, 0.7, 1.2),
+                                Material(1, 1, -1, 0, 0.7, 1.5),
                                 Material(1, 1, -1,0, 0, 1.0));
 
 uniform int objects[] = int[](0, 1, 2, 3, 2);
@@ -399,8 +399,15 @@ vec4 ray_march(inout Stack_frame frame, vec4 prev_ret) {
             }
             vec3 refr = refract(frame.ray.dir, frame.hit.n, eta1/eta2);
             if (refr == vec3(0, 0, 0)) {
-                esp--;
-                return frame.color + color(frame.hit.pos, frame.id) * materials[frame.material_id].refraction * get_shade(frame.hit, frame.ray.dir);
+                vec3 refl = reflect(frame.ray.dir, frame.hit.n);
+                vec3 shift = normalize(frame.ray.pos - frame.hit.pos);
+                Ray refl_ray = Ray(frame.hit.pos + 2*eps*shift, refl);
+                stack[esp] = Stack_frame(0, refl_ray, vec4(0, 0, 0, 0), frame.hit, frame.id, frame.material_id, frame.depth + 1);
+                esp++;
+                frame.phase = 2;
+                return frame.color;
+                //esp--;
+                //return frame.color + color(frame.hit.pos, frame.id) * materials[frame.material_id].refraction * get_shade(frame.hit, frame.ray.dir);
             }
             vec3 shift = normalize(-frame.ray.pos + frame.hit.pos);
             Ray refr_ray = Ray(frame.hit.pos + 2*eps*shift, -refr);
