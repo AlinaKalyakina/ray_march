@@ -6,19 +6,21 @@
 //External dependencies
 #define GLFW_DLL
 #include <GLFW/glfw3.h>
+#include <cstdlib>
 #include <random>
 #include <ctime>
+#include <map>
 
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 
 
-#define INIT_POS 0, 1.50, 6
+#define INIT_POS 0, 2.5, 5
 
-#define INIT_ROT_0 0//-0.3
+#define INIT_ROT_0 -0.4//-0.3
 #define INIT_ROT_1 0//0.6
 #define INIT_ROT_2 0
-#define INIT_VIEW float3(0, 0, -1)
+#define INIT_VIEW float3(0, 0, 0.5)
 #define INIT_RIGHT float3(1, 0, 0)
 #define INIT_UP float3(0, 1, 0)
 
@@ -28,9 +30,9 @@ using namespace LiteMath;
 
 float3 g_camPos(INIT_POS);
 float  cam_rot[3] = {INIT_ROT_0, INIT_ROT_1, INIT_ROT_2};
-float    mx = 0, my = 0;
-float speed = 0.1;
-const float max_speed = 4;
+//float    mx = 0, my = 0;
+//float speed = 0.1;
+//const float max_speed = 4;
 //const float init_speed = 0.1;
 //const float acceleration = 1.5;
 bool soft_shadows = false;
@@ -44,106 +46,107 @@ std::string textures[] = {"ft.tga", "bk.tga",
 bool moved = true;
 bool escape = false;
 
-float4x4 get_cam_rot() {
+float4x4 get_cam_rot()
+{
     return mul(rotate_Z_4x4(cam_rot[2]), \
                             mul(rotate_Y_4x4(-cam_rot[1]), rotate_X_4x4(+cam_rot[0])));
 }
 
-void windowResize(GLFWwindow* window, int width, int height) {
-  WIDTH  = width;
-  HEIGHT = height;
-}
-
-static void mouseMove(GLFWwindow* window, double xpos, double ypos) {
-  xpos /=(90);
-  ypos /=(90);
-
-  float x1 = xpos;
-  float y1 = ypos;
-
-  cam_rot[1] += (x1 - mx);	//Изменение угола поворота
-  cam_rot[0] -= (y1 - my);
-
-  mx = xpos;
-  my = ypos;
-  moved = true;
-}
-
-static void mouseScroll(GLFWwindow* window, double xpos, double ypos) {
-    g_camPos += ypos*0.1*mul(get_cam_rot(), INIT_VIEW);
-    moved = true;
-}
-
-static void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods){
-    if (action == GLFW_RELEASE && !(key == GLFW_KEY_RIGHT_SHIFT || key == GLFW_KEY_LEFT_SHIFT)) {
-        return;
-    }
-    switch (key) {
-        case GLFW_KEY_W:
-            g_camPos += speed*mul(get_cam_rot(), INIT_VIEW);
-            moved = true;
-            break;
-        case GLFW_KEY_S:
-            g_camPos -= speed*mul(get_cam_rot(), INIT_VIEW);
-            moved = true;
-            break;
-        case GLFW_KEY_D:
-            g_camPos += speed*mul(get_cam_rot(), INIT_RIGHT);
-            moved = true;
-            break;
-        case GLFW_KEY_A:
-            g_camPos -= speed*mul(get_cam_rot(), INIT_RIGHT);
-            moved = true;
-            break;
-        case GLFW_KEY_Q:
-            cam_rot[2] += speed;
-            moved = true;
-            break;
-        case GLFW_KEY_E:
-            cam_rot[2] -= speed;
-            moved = true;
-            break;
-        case GLFW_KEY_R:
-            g_camPos += speed*mul(get_cam_rot(), INIT_UP);
-            moved = true;
-            break;
-        case GLFW_KEY_F:
-            g_camPos -= speed*mul(get_cam_rot(), INIT_UP);
-            moved = true;
-            break;
-        case GLFW_KEY_0:
-            cam_rot[0] = INIT_ROT_0;
-            cam_rot[1] = INIT_ROT_1;
-            cam_rot[2] = INIT_ROT_2;
-            g_camPos = float3(INIT_POS);
-            fog = false;
-            soft_shadows = false;
-            moved = true;
-            break;
-        case GLFW_KEY_1:
-            if (action == GLFW_PRESS)
-                soft_shadows = ! soft_shadows;
-            return;
-        case GLFW_KEY_2:
-            if (action == GLFW_PRESS)
-                fog = ! fog;
-            return;
-        case GLFW_KEY_LEFT_SHIFT:
-        case GLFW_KEY_RIGHT_SHIFT:
-            if (speed < max_speed && action == GLFW_PRESS) {
-                speed *= 2;
-            }
-            if (action == GLFW_RELEASE)
-                speed = 0.1;
-            printf("%lf ", speed);
-            return;
-        case GLFW_KEY_ESCAPE:
-        	escape = true;
-    }
-    if (g_camPos.y < 0) {
-        g_camPos.y = 0;
-    }
-}
+//void windowResize(GLFWwindow* window, int width, int height) {
+//  WIDTH  = width;
+//  HEIGHT = height;
+//}
+//
+//static void mouseMove(GLFWwindow* window, double xpos, double ypos) {
+//  xpos /= (90);
+//  ypos /= (90);
+//
+//  float x1 = xpos;
+//  float y1 = ypos;
+//
+//  cam_rot[1] += (x1 - mx);	//Изменение угола поворота
+//  cam_rot[0] -= (y1 - my);
+//
+//  mx = xpos;
+//  my = ypos;
+//  moved = true;
+//}
+//
+//static void mouseScroll(GLFWwindow* window, double xpos, double ypos) {
+//    g_camPos += ypos*0.1*mul(get_cam_rot(), INIT_VIEW);
+//    moved = true;
+//}
+//
+//static void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods){
+//    if (action == GLFW_RELEASE && !(key == GLFW_KEY_RIGHT_SHIFT || key == GLFW_KEY_LEFT_SHIFT)) {
+//        return;
+//    }
+//    switch (key) {
+//        case GLFW_KEY_W:
+//            g_camPos += speed*mul(get_cam_rot(), INIT_VIEW);
+//            moved = true;
+//            break;
+//        case GLFW_KEY_S:
+//            g_camPos -= speed*mul(get_cam_rot(), INIT_VIEW);
+//            moved = true;
+//            break;
+//        case GLFW_KEY_D:
+//            g_camPos += speed*mul(get_cam_rot(), INIT_RIGHT);
+//            moved = true;
+//            break;
+//        case GLFW_KEY_A:
+//            g_camPos -= speed*mul(get_cam_rot(), INIT_RIGHT);
+//            moved = true;
+//            break;
+//        case GLFW_KEY_Q:
+//            cam_rot[2] += speed;
+//            moved = true;
+//            break;
+//        case GLFW_KEY_E:
+//            cam_rot[2] -= speed;
+//            moved = true;
+//            break;
+//        case GLFW_KEY_R:
+//            g_camPos += speed*mul(get_cam_rot(), INIT_UP);
+//            moved = true;
+//            break;
+//        case GLFW_KEY_F:
+//            g_camPos -= speed*mul(get_cam_rot(), INIT_UP);
+//            moved = true;
+//            break;
+//        case GLFW_KEY_0:
+//            cam_rot[0] = INIT_ROT_0;
+//            cam_rot[1] = INIT_ROT_1;
+//            cam_rot[2] = INIT_ROT_2;
+//            g_camPos = float3(INIT_POS);
+//            fog = false;
+//            soft_shadows = false;
+//            moved = true;
+//            break;
+//        case GLFW_KEY_1:
+//            if (action == GLFW_PRESS)
+//                soft_shadows = ! soft_shadows;
+//            return;
+//        case GLFW_KEY_2:
+//            if (action == GLFW_PRESS)
+//                fog = ! fog;
+//            return;
+//        case GLFW_KEY_LEFT_SHIFT:
+//        case GLFW_KEY_RIGHT_SHIFT:
+//            if (speed < max_speed && action == GLFW_PRESS) {
+//                speed *= 2;
+//            }
+//            if (action == GLFW_RELEASE)
+//                speed = 0.1;
+//            printf("%lf ", speed);
+//            return;
+//        case GLFW_KEY_ESCAPE:
+//        	escape = true;
+//    }
+//    if (g_camPos.y < 0) {
+//        g_camPos.y = 0;
+//    }
+//}
 
 int initGL() {
 	int res = 0;
@@ -162,32 +165,41 @@ int initGL() {
 	return 0;
 }
 
-int main(int argc, char** argv)
+int main(int argc, char* argv[])
 {
-	if(!glfwInit())
-    return -1;
+    std::map<std::string, std::string> args;
+    for (int i = 0; i < argc/2; i++) {
+        args[std::string(argv[1 + i * 2])] = argv[2+2*i];
+    }
+    std::string output_path = args["-out"];
+    int scene_number = atoi(args["−scene"].c_str());
+    int threads_num = atoi(args["−threads"].c_str());
+
+
+    if(!glfwInit())
+        return -1;
 //
 	//запрашиваем контекст opengl версии 3.3
 	glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3); 
 	glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3); 
-	glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE); 
-	glfwWindowHint(GLFW_RESIZABLE, GL_TRUE); 
+	glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+	glfwWindowHint(GLFW_RESIZABLE, GL_TRUE);
 
-  GLFWwindow*  window = glfwCreateWindow(WIDTH, HEIGHT, "OpenGL ray marching sample", nullptr, nullptr);
+    GLFWwindow*  window = glfwCreateWindow(WIDTH, HEIGHT, "OpenGL ray marching sample", nullptr, nullptr);
 	if (window == nullptr)
 	{
 		std::cout << "Failed to create GLFW window" << std::endl;
 		glfwTerminate();
 		return -1;
 	}
-    double x, y;
-	glfwGetCursorPos(window, &x, &y);
-	mx = x/90;
-	my = y/90;
+    //double x, y;
+	//glfwGetCursorPos(window, &x, &y);
+	//mx = x/90;
+	//my = y/90;
     //glfwSetCursorPosCallback (window, mouseMove);
-    glfwSetScrollCallback(window, mouseScroll);
-    glfwSetWindowSizeCallback(window, windowResize);
-    glfwSetKeyCallback(window, keyCallback);
+    //glfwSetScrollCallback(window, mouseScroll);
+    //glfwSetWindowSizeCallback(window, windowResize);
+    //glfwSetKeyCallback(window, keyCallback);
 
 	glfwMakeContextCurrent(window); 
 	glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
@@ -285,12 +297,12 @@ int main(int argc, char** argv)
         float4x4 camRotMatrix   = get_cam_rot();
         float4x4 camTransMatrix = translate4x4(g_camPos);
         float4x4 rayMatrix      = mul(camTransMatrix, camRotMatrix);
-        program.SetUniform("moved", moved);//!(prev_view_dir == view_dir && prev_g_camPos == g_camPos));
+        //program.SetUniform("moved", moved);//!(prev_view_dir == view_dir && prev_g_camPos == g_camPos));
         program.SetUniform("g_rayMatrix", rayMatrix);
         program.SetUniform("show_fog", fog);
         program.SetUniform("g_screenWidth" , WIDTH);
         program.SetUniform("g_screenHeight", HEIGHT);
-        program.SetUniform("show_soft_shadows", soft_shadows);
+        //program.SetUniform("show_soft_shadows", soft_shadows);
 
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_CUBE_MAP, cubemap);
@@ -307,7 +319,7 @@ int main(int argc, char** argv)
     //
     glBindVertexArray(g_vertexArrayObject); GL_CHECK_ERRORS;
     glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);  GL_CHECK_ERRORS;  // The last parameter of glDrawArrays is equal to VS invocation
-        moved = false;
+        //moved = false;
         //first_time = false;
     program.StopUseShader();
 
