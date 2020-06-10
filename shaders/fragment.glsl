@@ -1,18 +1,18 @@
 #version 330
 
-//#define USE_ANTI_ALIASING 0
+#define USE_ANTI_ALIASING 1
 #define eps 1e-3
 #define samples 5
 #define max_depth 4
 #define step 1e-1
-#define max_it 500
+#define max_it 100
 #define penumbra_factor 12.0
-#define PRIM_NUM 4
+#define PRIM_NUM 5
 #define LIGHTS_NUM 2
 #define ambient_light 0.3
 #define MAX_ANGLE 0.04
 
-//uniform bool moved = true;
+uniform bool moved = true;
 
 uniform samplerCube Cube;
 uniform sampler2D Plane;
@@ -21,7 +21,7 @@ in vec2 fragmentTexCoord;
 
 layout(location = 0) out vec4 fragColor;
 
-//uniform bool show_soft_shadows = false;
+uniform bool show_soft_shadows = false;
 uniform bool show_fog = false;
 
 uniform int g_screenWidth = 512;
@@ -42,7 +42,7 @@ struct Material {
 uniform Material materials[] = Material[] (
                                 Material(1, 1, -1, 0, 0, 1),
                                 Material(1, 1, 4096, 0.5, 0, 1),
-                                Material(1, 1, -1, 0, 0.7, 1.5),
+                                Material(1, 1, -1, 0, 0.7, 1.2),
                                 Material(1, 1, -1,0, 0, 1.0));
 
 uniform int objects[] = int[](0, 1, 2, 3, 2);
@@ -156,6 +156,22 @@ float sdKing(vec3 p) {
     return min(d1, d2);
 }
 
+float fractal1(vec3 p) {
+    float d = sdBox(p, vec3(1, 1, 1));
+    float s = 1.0, da, db, dc, c;
+    vec3 a, r;
+    for (int i = 0; i < 4; i++) {
+        a = mod( p*s, 2.0 )-1.0;
+        s *= 3;
+        r = abs(1 - 3*abs(a));
+        da = max(r.x,r.y);
+        db = max(r.y,r.z);
+        dc = max(r.z,r.x);
+        c = (min(dc, min(da, db)) - 1)/s;
+        d = max(d, c);
+    }
+    return d;
+}
 
 float DistanceEvaluation(vec3 p, int id){
     switch(id){
@@ -167,9 +183,9 @@ float DistanceEvaluation(vec3 p, int id){
         case 2:
             return sdPawn(p - vec3(-0.3, 0.16, 0.3));
         case 3:
-        //    p -= vec3(4, 1, -3);
-        //    return fractal1(rotate_Y(3.14/6)*p);
-        //case 4:
+            p -= vec3(4, 1, -3);
+            return fractal1(rotate_Y(3.14/6)*p);
+        case 4:
             return sdKing(p - vec3(-0.9, 0.16, -0.3));
     }
     return 0.;
@@ -194,8 +210,8 @@ vec4 color(vec3 pos, int id) {
             return vec4(1, 1,1, 1);
         case 3:
             return vec4(0.8, 0.4, 0.9, 1);
-
     }
+    return vec4(0.0, 0.0, 0.0, 0.0);
 }
 
 vec3 EstimateNormal(vec3 z, int id) {
@@ -236,12 +252,12 @@ float Shadow(vec3 point_pos, vec3 ray_dir, float maxt) {
         if(h < loc_eps) {
             return 0.;
         }
-//        if (show_soft_shadows) {
-//            float y = h*h/(2.0*ph);
-//            ph = h;
-//            float d = sqrt(h*h-y*y);
-//            res = min(res, penumbra_factor*h/max(0.0,t-y));
-//            }
+        if (show_soft_shadows) {
+            float y = h*h/(2.0*ph);
+            ph = h;
+            float d = sqrt(h*h-y*y);
+            res = min(res, penumbra_factor*h/max(0.0,t-y));
+            }
         t += h;
     }
     return res;
@@ -251,7 +267,7 @@ Intersect ray_intersection(Ray ray) {
     float cur_dist, min_dist;
     float t = 0;
     int object_id = -1;
-    for(int i = 0; i < (max_it); i++) {
+    for(int i = 0; i < max_it; i++) {
         min_dist = MinDist(ray.pos + t*ray.dir, object_id);
         t += min_dist;
         if (abs(min_dist) < eps/5) {
@@ -290,7 +306,7 @@ float get_occlusion(Intersect hit) {
 float get_shade(Intersect hit, vec3 ray_dir) {
     Material material = materials[objects[hit.id]];
     //ambient
-    float intensity = ambient_light * material.ambient * get_occlusion(hit);
+    float intensity = ambient_light * material.ambient* get_occlusion(hit);
     float shadow;
     Intersect result;//
     for (int i = 0; i < LIGHTS_NUM; i++) {
@@ -320,6 +336,20 @@ vec4 fog(float dist, vec4 color ) {
     return mix(color,vec4(0.4,0.4,0.6, 1), smoothstep(0.0,1.0,sqrt(dist)/5.0) );
 }
 
+//vec4 get_plane_color(vec3 point) {
+//    float k = ambient_light, d, att;
+//    vec4 color = texture(Plane, point.xz);
+//    for (int i = 0; i < LIGHTS_NUM; i++) {
+//        vec3 l = point - lights[i].pos;
+//        d = length(l);
+//        l = normalize(l);
+//        Intersect hit =  ray_intersection(Ray(lights[i].pos, l));
+//        if (hit.id == -1) {
+//            k += lights[i].intensity*(-l.y);///(lights[i].kc + lights[i].kl*d + lights[i].kq*d*d);
+//        }
+//    }
+//    return k*texture(Plane, point.xz);
+//}
 
 vec4 ray_march(inout Stack_frame frame, vec4 prev_ret) {
     if (frame.phase == 0) {
@@ -369,15 +399,8 @@ vec4 ray_march(inout Stack_frame frame, vec4 prev_ret) {
             }
             vec3 refr = refract(frame.ray.dir, frame.hit.n, eta1/eta2);
             if (refr == vec3(0, 0, 0)) {
-                vec3 refl = reflect(frame.ray.dir, frame.hit.n);
-                vec3 shift = normalize(frame.ray.pos - frame.hit.pos);
-                Ray refl_ray = Ray(frame.hit.pos + 2*eps*shift, refl);
-                stack[esp] = Stack_frame(0, refl_ray, vec4(0, 0, 0, 0), frame.hit, frame.id, frame.material_id, frame.depth + 1);
-                esp++;
-                frame.phase = 2;
-                return frame.color;
-                //esp--;
-                //return frame.color + color(frame.hit.pos, frame.id) * materials[frame.material_id].refraction * get_shade(frame.hit, frame.ray.dir);
+                esp--;
+                return frame.color + color(frame.hit.pos, frame.id) * materials[frame.material_id].refraction * get_shade(frame.hit, frame.ray.dir);
             }
             vec3 shift = normalize(-frame.ray.pos + frame.hit.pos);
             Ray refr_ray = Ray(frame.hit.pos + 2*eps*shift, -refr);
@@ -398,7 +421,6 @@ vec4 ray_march(inout Stack_frame frame, vec4 prev_ret) {
         return fog(length(frame.hit.pos - frame.ray.pos), frame.color);
     return frame.color;
 }
-
 
 vec4 main_function(float w, float h, float x, float y, float x_shift, float y_shift) {
     vec3 ray_pos = vec3(0,0,0);
@@ -433,20 +455,20 @@ void main(void)
     float x = fragmentTexCoord.x*w;
     float y =fragmentTexCoord.y*h;
   // generate initial ray
-//  #if USE_ANTI_ALIASING == 1
-//    if (moved) {
-//        fragColor = main_function(w, h, x, y, 0, 0);
-//    } else {
-//        fragColor = vec4(0, 0, 0, 0);
-//        for (float x_shift = -1./3; x_shift < 0.5; x_shift += 2./3)
-//            for (float y_shift = -1./3; y_shift < 0.5; y_shift += 2./3) {
-//                fragColor += main_function(w, h, x, y, x_shift, y_shift);
-//            }
-//        fragColor /= 4;
-//    }
-//  #else
+  #if USE_ANTI_ALIASING == 1
+    if (moved) {
+        fragColor = main_function(w, h, x, y, 0, 0);
+    } else {
+        fragColor = vec4(0, 0, 0, 0);
+        for (float x_shift = -1./3; x_shift < 0.5; x_shift += 2./3)
+            for (float y_shift = -1./3; y_shift < 0.5; y_shift += 2./3) {
+                fragColor += main_function(w, h, x, y, x_shift, y_shift);
+            }
+        fragColor /= 4;
+    }
+  #else
     fragColor = main_function(w, h, x, y, 0, 0);
-//  #endif
+  #endif
 }
 
 
